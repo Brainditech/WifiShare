@@ -46,46 +46,12 @@ export function WebClient() {
 
     const wsRef = useRef<WebSocket | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const connectionStateRef = useRef<ConnectionState>('connecting');
 
-    // Connect to WebSocket server
+    // Keep ref in sync with state
     useEffect(() => {
-        if (!sessionCode) {
-            setError('Code de session manquant. Veuillez scanner à nouveau le QR code.');
-            setConnectionState('error');
-            return;
-        }
-
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}`;
-
-        const ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
-
-        ws.onopen = () => {
-            // Authenticate with session code
-            ws.send(JSON.stringify({ type: 'auth', sessionCode }));
-        };
-
-        ws.onmessage = (event) => {
-            const message = JSON.parse(event.data);
-            handleMessage(message);
-        };
-
-        ws.onerror = () => {
-            setConnectionState('error');
-            setError('Erreur de connexion au serveur');
-        };
-
-        ws.onclose = () => {
-            if (connectionState === 'connected') {
-                setConnectionState('disconnected');
-            }
-        };
-
-        return () => {
-            ws.close();
-        };
-    }, [sessionCode]);
+        connectionStateRef.current = connectionState;
+    }, [connectionState]);
 
     const handleMessage = useCallback((message: { type: string;[key: string]: unknown }) => {
         switch (message.type) {
@@ -120,12 +86,90 @@ export function WebClient() {
                 downloadFile(message.downloadUrl as string, message.fileName as string);
                 break;
 
+            case 'pong':
+                // Keep-alive response
+                break;
+
             case 'error':
                 setError(message.message as string);
                 setCurrentTransfer(null);
                 break;
         }
     }, []);
+
+    // Connect to WebSocket server
+    useEffect(() => {
+        if (!sessionCode) {
+            setError('Code de session manquant. Veuillez scanner à nouveau le QR code.');
+            setConnectionState('error');
+            return;
+        }
+
+        let ws: WebSocket | null = null;
+        let pingInterval: ReturnType<typeof setInterval> | null = null;
+        let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+
+        const connect = () => {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}`;
+
+            ws = new WebSocket(wsUrl);
+            wsRef.current = ws;
+
+            ws.onopen = () => {
+                // Authenticate with session code
+                ws?.send(JSON.stringify({ type: 'auth', sessionCode }));
+
+                // Start keep-alive ping
+                pingInterval = setInterval(() => {
+                    if (ws?.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'ping' }));
+                    }
+                }, 30000); // Ping every 30 seconds
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const message = JSON.parse(event.data);
+                    handleMessage(message);
+                } catch (e) {
+                    console.error('Failed to parse message:', e);
+                }
+            };
+
+            ws.onerror = () => {
+                console.error('WebSocket error');
+            };
+
+            ws.onclose = () => {
+                if (pingInterval) {
+                    clearInterval(pingInterval);
+                    pingInterval = null;
+                }
+
+                // Only try to reconnect if we were connected
+                if (connectionStateRef.current === 'connected') {
+                    setConnectionState('disconnected');
+                    // Try to reconnect after 2 seconds
+                    reconnectTimeout = setTimeout(() => {
+                        console.log('Attempting to reconnect...');
+                        connect();
+                    }, 2000);
+                }
+            };
+        };
+
+        connect();
+
+        return () => {
+            if (pingInterval) clearInterval(pingInterval);
+            if (reconnectTimeout) clearTimeout(reconnectTimeout);
+            if (ws) {
+                ws.onclose = null; // Prevent reconnect on intentional close
+                ws.close();
+            }
+        };
+    }, [sessionCode, handleMessage]);
 
     const downloadFile = (url: string, fileName: string) => {
         const a = document.createElement('a');
