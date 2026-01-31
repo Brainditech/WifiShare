@@ -1,17 +1,15 @@
 // ============================================================================
-// DesktopHome - Soft UI Bento Layout
+// DesktopHome - Syncra Dark Layout
+// Centered, Minimalist, Dark Mode
 // ============================================================================
 
 import { useEffect, useState, useCallback } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import {
     Wifi,
-    FolderOpen,
-    Users,
     FileUp,
-    Smartphone,
-    ArrowUpRight,
-    Zap
+    Download,
+    Check
 } from 'lucide-react';
 
 interface ServerInfo {
@@ -19,12 +17,6 @@ interface ServerInfo {
     port: number;
     sessionCode: string;
     url: string;
-}
-
-interface ReceivedFile {
-    name: string;
-    path: string;
-    timestamp: Date;
 }
 
 interface ConnectedClient {
@@ -38,12 +30,9 @@ interface TransferProgress {
 
 export function DesktopHome() {
     const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
-    const [receivedFiles, setReceivedFiles] = useState<ReceivedFile[]>([]);
     const [connectedClients, setConnectedClients] = useState<ConnectedClient[]>([]);
     const [currentTransfer, setCurrentTransfer] = useState<TransferProgress | null>(null);
-
-    // Pour l'animation
-    const [showCopiedTooltip, setShowCopiedTooltip] = useState(false);
+    const [showCopied, setShowCopied] = useState(false);
 
     useEffect(() => {
         const loadServerInfo = async () => {
@@ -56,8 +45,7 @@ export function DesktopHome() {
         loadServerInfo();
 
         if (window.electronAPI) {
-            const unsubFile = window.electronAPI.onFileReceived((file) => {
-                setReceivedFiles(prev => [...prev, { ...file, timestamp: new Date() }]);
+            const unsubFile = window.electronAPI.onFileReceived(() => {
                 setCurrentTransfer(null);
             });
 
@@ -85,10 +73,8 @@ export function DesktopHome() {
     const copyUrl = useCallback(() => {
         if (serverInfo?.url) {
             navigator.clipboard.writeText(serverInfo.url);
-            setShowCopiedTooltip(true);
-            setTimeout(() => {
-                setShowCopiedTooltip(false);
-            }, 2000);
+            setShowCopied(true);
+            setTimeout(() => setShowCopied(false), 2000);
         }
     }, [serverInfo]);
 
@@ -110,173 +96,103 @@ export function DesktopHome() {
 
     if (!serverInfo) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-[#F5F6FA]">
-                <div className="animate-pulse flex flex-col items-center">
-                    <div className="w-16 h-16 rounded-full bg-black flex items-center justify-center mb-4">
-                        <Wifi className="text-white" />
+            <div className="min-h-screen flex items-center justify-center bg-black">
+                <div className="flex flex-col items-center">
+                    <div className="w-12 h-12 rounded-full border border-white/20 flex items-center justify-center mb-4 animate-spin">
+                        <div className="w-2 h-2 bg-white rounded-full"></div>
                     </div>
-                    <p className="text-gray-400 font-medium">Starting server...</p>
+                    <p className="text-white/40 text-sm tracking-widest uppercase">Initializing</p>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen relative p-8 md:p-12 overflow-hidden">
-            {/* Background Blobs */}
-            <div className="animate-blobs">
-                <div className="blob blob-1"></div>
-                <div className="blob blob-2"></div>
-                <div className="blob blob-3"></div>
-            </div>
+        <div className="min-h-screen relative overflow-hidden bg-black text-white selection:bg-purple-500/30">
+            {/* Background Ambience */}
+            <div className="fixed top-[-20%] left-[20%] w-[600px] h-[600px] bg-purple-900/20 rounded-full blur-[120px] pointer-events-none" />
+            <div className="fixed bottom-[-10%] right-[10%] w-[500px] h-[500px] bg-blue-900/10 rounded-full blur-[100px] pointer-events-none" />
 
-            <div className="max-w-6xl mx-auto relative z-10">
-                {/* Header */}
-                <header className="flex items-center justify-between mb-12">
-                    <div>
-                        <h1 className="heading-xl mb-2">Hello, User 👋</h1>
-                        <p className="text-body font-medium">Ready to share files?</p>
+            {/* Main Container - Centered Single Scene */}
+            <div className="w-full h-screen max-w-sm mx-auto relative z-10 flex flex-col items-center justify-center p-6">
+
+                {/* Header - Condensed */}
+                <header className="text-center mb-8 shrink-0">
+                    <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-white/5 border border-white/10 mb-4 backdrop-blur-xl">
+                        <Wifi className="w-6 h-6 text-white" />
                     </div>
-
-                    <div className="status-pill">
-                        <div className="dot dot-success animate-pulse"></div>
-                        <span>Server Active</span>
+                    <h1 className="heading-syncra mb-1 text-2xl! bg-clip-text text-transparent bg-gradient-to-b from-white to-white/70">WiFi Share</h1>
+                    <div className="flex items-center justify-center gap-2">
+                        <div className={`w-1.5 h-1.5 rounded-full ${connectedClients.length > 0 ? 'bg-[#00FF94] shadow-[0_0_8px_#00FF94]' : 'bg-white/20'}`} />
+                        <p className="text-white/40 text-[10px] font-medium tracking-wide">
+                            {connectedClients.length > 0 ? `${connectedClients.length} DEVICE CONNECTED` : 'WAITING FOR CONNECTION'}
+                        </p>
                     </div>
                 </header>
 
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
-
-                    {/* LEFT COLUMN (QR & INFO) - SPAN 5 */}
-                    <div className="md:col-span-5 flex flex-col gap-6">
-
-                        {/* Main QR Card */}
-                        <div className="bento-card bg-white flex flex-col items-center text-center py-10">
-                            <h2 className="heading-lg mb-2">Scan to Connect</h2>
-                            <p className="text-gray-400 text-sm mb-8">Use your phone's camera</p>
-
-                            <div className="qr-frame mb-8 pointer-events-none select-none">
-                                <QRCodeSVG
-                                    value={serverInfo.url}
-                                    size={180}
-                                    level="M"
-                                    fgColor="#1C1C1E"
-                                />
-                            </div>
-
-                            <div
-                                onClick={copyUrl}
-                                className="cursor-pointer group relative bg-gray-50 hover:bg-gray-100 rounded-xl p-4 w-full max-w-xs transition-colors"
-                            >
-                                <p className="text-label text-xs mb-1">SESSION CODE</p>
-                                <p className="text-3xl font-bold tracking-widest text-[#1C1C1E] font-mono group-hover:scale-105 transition-transform">
-                                    {serverInfo.sessionCode}
-                                </p>
-
-                                {showCopiedTooltip && (
-                                    <div className="absolute top-0 right-0 -mt-8 bg-black text-white text-xs px-3 py-1 rounded-full animate-bounce">
-                                        Copied!
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
+                {/* Main Action Card - Condensed */}
+                <div className="syncra-card flex flex-col items-center text-center p-6 mb-6 transform hover:scale-[1.01] transition-transform w-full shrink-0">
+                    <div className="qr-container-dark mb-5 p-3 rounded-xl">
+                        <QRCodeSVG
+                            value={serverInfo.url}
+                            size={160}
+                            level="M"
+                            fgColor="#000000"
+                            bgColor="#FFFFFF"
+                        />
                     </div>
 
-                    {/* RIGHT COLUMN (DEVICES & ACTIONS) - SPAN 7 */}
-                    <div className="md:col-span-7 flex flex-col gap-6">
+                    <p className="text-white/50 text-[11px] mb-4 max-w-xs mx-auto">
+                        Scan with your mobile camera
+                    </p>
 
-                        {/* Connected Devices Card (Blue Accent) */}
-                        <div className="bento-card bento-card-blue min-h-[180px]">
-                            <div className="flex justify-between items-start mb-6">
-                                <div>
-                                    <h2 className="heading-lg">Devices</h2>
-                                    <p className="text-blue-800/60 font-medium">Connected peers</p>
-                                </div>
-                                <div className="w-12 h-12 bg-white/50 rounded-full flex items-center justify-center">
-                                    <Users className="text-blue-600 w-6 h-6" />
-                                </div>
-                            </div>
-
-                            {connectedClients.length === 0 ? (
-                                <div className="flex items-center gap-3 opacity-50">
-                                    <div className="w-2 h-2 bg-blue-400 rounded-full animate-ping"></div>
-                                    <p className="font-medium text-blue-900">Waiting for connection...</p>
-                                </div>
-                            ) : (
-                                <div className="flex gap-4 overflow-x-auto pb-2">
-                                    {connectedClients.map((client) => (
-                                        <div key={client.id} className="bg-white/60 backdrop-blur-sm p-4 rounded-xl flex items-center gap-3 min-w-[160px]">
-                                            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                                                <Smartphone className="w-5 h-5 text-blue-600" />
-                                            </div>
-                                            <div>
-                                                <p className="font-bold text-sm text-gray-800">Mobile</p>
-                                                <p className="text-xs text-gray-500 uppercase">{client.id.slice(0, 4)}</p>
-                                            </div>
-                                            <div className="w-2 h-2 bg-green-500 rounded-full ml-auto"></div>
-                                        </div>
-                                    ))}
+                    <div
+                        onClick={copyUrl}
+                        className="group flex flex-col items-center cursor-pointer"
+                    >
+                        <p className="text-white/30 text-[10px] font-bold tracking-[0.2em] mb-1 uppercase">Session Code</p>
+                        <div className="relative">
+                            <p className="text-3xl font-mono font-bold text-white tracking-widest group-hover:text-[#E0C3FC] transition-colors">
+                                {serverInfo.sessionCode}
+                            </p>
+                            {showCopied && (
+                                <div className="absolute top-1/2 left-full ml-4 -translate-y-1/2 flex items-center gap-1 text-[#00FF94] text-xs font-bold uppercase tracking-wider animate-in fade-in slide-in-from-left-2">
+                                    <Check className="w-3 h-3" /> Copied
                                 </div>
                             )}
                         </div>
-
-                        {/* Actions Grid */}
-                        <div className="grid grid-cols-2 gap-6">
-
-                            {/* Send Files Button (Big) */}
-                            <button
-                                onClick={selectFilesToShare}
-                                disabled={connectedClients.length === 0}
-                                className="bento-card bg-[#1C1C1E] text-white hover:bg-black group flex flex-col justify-between items-start text-left min-h-[180px] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border-none"
-                            >
-                                <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center group-hover:bg-white/20 transition-colors">
-                                    <FileUp className="w-6 h-6 text-white" />
-                                </div>
-                                <div>
-                                    <h3 className="text-xl font-bold">Send Files</h3>
-                                    <p className="text-gray-400 text-sm mt-1">To connected device</p>
-                                </div>
-                            </button>
-
-                            {/* Downloads Folder Button */}
-                            <button
-                                onClick={openDownloadsFolder}
-                                className="bento-card bento-card-green hover:bg-[#d1fae5] group flex flex-col justify-between items-start text-left min-h-[180px] cursor-pointer border-none"
-                            >
-                                <div className="w-12 h-12 bg-green-200/50 rounded-full flex items-center justify-center">
-                                    <FolderOpen className="w-6 h-6 text-green-800" />
-                                </div>
-                                <div className="w-full">
-                                    <div className="flex justify-between items-end">
-                                        <h3 className="text-xl font-bold text-green-900">Downloads</h3>
-                                        <ArrowUpRight className="text-green-700 w-5 h-5 mb-1" />
-                                    </div>
-                                    <p className="text-green-800/60 text-sm mt-1">{receivedFiles.length} files received</p>
-                                </div>
-                            </button>
-                        </div>
-
-                        {/* Transfer Progress (Conditional) */}
-                        {currentTransfer && (
-                            <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 w-full max-w-md bg-white rounded-full shadow-xl p-2 pr-6 flex items-center gap-4 z-50 animate-float">
-                                <div className="w-12 h-12 bg-black rounded-full flex items-center justify-center shrink-0">
-                                    <Zap className="text-white w-5 h-5 fill-current" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="font-bold text-sm truncate">{currentTransfer.fileName}</p>
-                                    <div className="h-1.5 w-full bg-gray-100 rounded-full mt-1 overflow-hidden">
-                                        <div
-                                            className="h-full bg-black rounded-full transition-all duration-300"
-                                            style={{ width: `${currentTransfer.percent}%` }}
-                                        />
-                                    </div>
-                                </div>
-                                <span className="font-bold text-sm">{currentTransfer.percent}%</span>
-                            </div>
-                        )}
-
                     </div>
                 </div>
+
+                {/* Actions Row - Condensed */}
+                <div className="grid grid-cols-2 gap-3 w-full shrink-0">
+                    <button
+                        onClick={selectFilesToShare}
+                        disabled={connectedClients.length === 0}
+                        className={`btn-syncra py-3 px-4 text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-2 ${connectedClients.length === 0 ? 'opacity-50 grayscale cursor-not-allowed' : ''}`}
+                    >
+                        <FileUp className="w-4 h-4" />
+                        <span>Send Files</span>
+                    </button>
+
+                    <button
+                        onClick={openDownloadsFolder}
+                        className="btn-ghost py-3 px-4 text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-2"
+                    >
+                        <Download className="w-4 h-4" />
+                        <span>Downloads</span>
+                    </button>
+                </div>
+
+                {/* Connected Devices & Activity (Absolute bottom or integrated if space) */}
+                {/* Transfer Progress Pill - Absolute Centered */}
+                {currentTransfer && (
+                    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 bg-[#0A0A0A] border border-white/10 rounded-full px-4 py-2 flex items-center gap-3 shadow-xl z-50 animate-in slide-in-from-bottom-2">
+                        <div className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
+                        <span className="text-xs font-medium text-white max-w-[100px] truncate">{currentTransfer.fileName}</span>
+                        <span className="text-xs font-mono font-bold text-purple-400">{currentTransfer.percent}%</span>
+                    </div>
+                )}
             </div>
         </div>
     );

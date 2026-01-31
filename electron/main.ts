@@ -17,6 +17,8 @@ function createWindow() {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
             nodeIntegration: false,
+            // Désactiver l'autofill pour éviter les warnings
+            disableBlinkFeatures: 'Autofill',
         },
         icon: path.join(__dirname, '../public/icon.png'),
         title: 'WiFiShare',

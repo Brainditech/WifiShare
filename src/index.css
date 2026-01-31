@@ -1,6 +1,6 @@
 /* ============================================================================
-   WiFiShare - Soft UI Design System (Bento Style)
-   Clean, Pastel, Rounded, Friendly
+   WiFiShare - Syncra Dark Design System
+   Sober, Modern, Centered, Dark Mode
    ============================================================================ */
 
 @import "tailwindcss";
@@ -9,8 +9,9 @@
    Theme Configuration
    ============================================================================ */
 @theme {
+  --animate-glow: glow 3s ease-in-out infinite;
   --animate-float: float 6s ease-in-out infinite;
-  --animate-blob: blob 7s infinite;
+  --animate-pulse-slow: pulse-slow 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 /* ============================================================================
@@ -18,329 +19,255 @@
    ============================================================================ */
 :root {
   /* Backgrounds */
-  --bg-app: #F5F6FA;
-  --bg-card: #FFFFFF;
-  --bg-card-hover: #F8FAFC;
+  --bg-primary: #050505;
+  --bg-secondary: #0A0A0A;
+  --bg-glass: rgba(255, 255, 255, 0.03);
+  --bg-glass-hover: rgba(255, 255, 255, 0.08);
 
   /* Text */
-  --text-primary: #1C1C1E;
-  --text-secondary: #6B7280;
-  --text-tertiary: #9CA3AF;
+  --text-primary: #FFFFFF;
+  --text-secondary: rgba(255, 255, 255, 0.6);
+  --text-tertiary: rgba(255, 255, 255, 0.3);
 
-  /* Accents - Pastel & Vibrant Mix */
-  --accent-pink: #FFD1DC;
-  --accent-blue: #E0F2FE;
-  --accent-green: #DCFCE7;
-  --accent-purple: #F3E8FF;
-  --accent-yellow: #FEF9C3;
-  --accent-orange: #FFEDD5;
+  /* Accents (Syncra Gradients) */
+  --accent-purple: #9D00FF;
+  --accent-pink: #FF00E6;
+  --accent-blue: #2E5CFF;
 
-  /* Button Colors */
-  --btn-primary-bg: #1C1C1E;
-  --btn-primary-text: #FFFFFF;
+  /* Status */
+  --status-success: #00FF94;
+  --status-error: #FF3B30;
 
-  /* Status Colors */
-  --status-success: #10B981;
-  --status-warning: #F59E0B;
-  --status-error: #EF4444;
-
-  /* Shadows */
-  --shadow-soft: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
-  --shadow-hover: 0 10px 25px -5px rgba(0, 0, 0, 0.08);
+  /* Borders */
+  --border-glass: rgba(255, 255, 255, 0.1);
+  --border-glow: rgba(157, 0, 255, 0.3);
 }
 
 /* ============================================================================
    Base Styles
    ============================================================================ */
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
 body {
   font-family: 'Inter', -apple-system, system-ui, sans-serif;
-  background-color: var(--bg-app);
+  background-color: var(--bg-primary);
   color: var(--text-primary);
   line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
 
 #root {
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ============================================================================
-   Components - Bento Cards
+   Components - Syncra Cards
    ============================================================================ */
-.bento-card {
-  background-color: var(--bg-card);
-  border-radius: 28px;
-  padding: 24px;
-  box-shadow: var(--shadow-soft);
-  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-  border: 1px solid rgba(0, 0, 0, 0.02);
-  overflow: hidden;
+.syncra-card {
+  background: var(--bg-glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-glass);
+  border-radius: 32px;
+  padding: 32px;
   position: relative;
+  overflow: hidden;
+  transition: transform 0.3s ease, border-color 0.3s ease;
 }
 
-.bento-card:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-hover);
+.syncra-card:hover {
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
-.bento-card-pink {
-  background-color: var(--accent-pink);
-}
-
-.bento-card-blue {
-  background-color: var(--accent-blue);
-}
-
-.bento-card-green {
-  background-color: var(--accent-green);
-}
-
-.bento-card-purple {
-  background-color: var(--accent-purple);
-}
-
-/* ============================================================================
-   Typography
-   ============================================================================ */
-.heading-xl {
-  font-size: 2.5rem;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  color: var(--text-primary);
-}
-
-.heading-lg {
-  font-size: 1.5rem;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--text-primary);
-}
-
-.text-body {
-  font-size: 1rem;
-  color: var(--text-secondary);
-}
-
-.text-label {
-  font-size: 0.875rem;
-  font-weight: 600;
-  opacity: 0.6;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+.syncra-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
 }
 
 /* ============================================================================
    Buttons
    ============================================================================ */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 14px 28px;
+.btn-syncra {
+  position: relative;
+  background: linear-gradient(90deg, #2a0045, #1a0025);
+  border: 1px solid rgba(157, 0, 255, 0.3);
+  color: white;
+  padding: 16px 32px;
   border-radius: 100px;
   font-weight: 600;
   font-size: 1rem;
-  transition: all 0.2s ease;
+  letter-spacing: 0.5px;
   cursor: pointer;
-  border: none;
-  gap: 8px;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  box-shadow: 0 0 20px rgba(157, 0, 255, 0.1);
 }
 
-.btn-primary {
-  background-color: var(--btn-primary-bg);
-  color: var(--btn-primary-text);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+.btn-syncra:hover {
+  box-shadow: 0 0 30px rgba(157, 0, 255, 0.3);
+  border-color: rgba(157, 0, 255, 0.6);
+  transform: translateY(-2px);
 }
 
-.btn-primary:hover {
-  transform: scale(1.02);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+.btn-syncra::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(255, 0, 230, 0.2) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  transform: scale(0.5);
 }
 
-.btn-icon {
-  width: 50px;
-  height: 50px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: #FFFFFF;
-  color: var(--text-primary);
-  box-shadow: var(--shadow-soft);
-  transition: all 0.2s ease;
+.btn-syncra:hover::after {
+  opacity: 1;
+  transform: scale(1);
 }
 
-.btn-icon:hover {
-  transform: scale(1.1);
-}
-
-/* ============================================================================
-   QR Container
-   ============================================================================ */
-.qr-frame {
-  background: white;
-  padding: 16px;
-  border-radius: 20px;
-  display: inline-block;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
-}
-
-/* ============================================================================
-   Status Pill
-   ============================================================================ */
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  background-color: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(4px);
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--border-glass);
+  color: var(--text-secondary);
+  padding: 16px 32px;
   border-radius: 100px;
-  font-size: 0.875rem;
-  font-weight: 600;
-  border: 1px solid rgba(0, 0, 0, 0.05);
+  font-weight: 500;
+  transition: all 0.3s ease;
 }
 
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+.btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: white;
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
-.dot-success {
-  background-color: var(--status-success);
+/* ============================================================================
+   Typography & Layout
+   ============================================================================ */
+.heading-syncra {
+  font-size: 3rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  background: linear-gradient(180deg, #FFFFFF 0%, rgba(255, 255, 255, 0.7) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-align: center;
 }
 
-.dot-warning {
-  background-color: var(--status-warning);
+.text-gradient-purple {
+  background: linear-gradient(135deg, #E0C3FC 0%, #8EC5FC 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 /* ============================================================================
    Animations
    ============================================================================ */
-@keyframes float {
+@keyframes glow {
   0% {
-    transform: translateY(0px);
+    box-shadow: 0 0 5px rgba(157, 0, 255, 0.2);
+  }
+
+  50% {
+    box-shadow: 0 0 20px rgba(157, 0, 255, 0.5), 0 0 10px rgba(255, 0, 230, 0.3);
+  }
+
+  100% {
+    box-shadow: 0 0 5px rgba(157, 0, 255, 0.2);
+  }
+}
+
+@keyframes float {
+
+  0%,
+  100% {
+    transform: translateY(0);
   }
 
   50% {
     transform: translateY(-10px);
   }
+}
 
+@keyframes pulse-slow {
+
+  0%,
   100% {
-    transform: translateY(0px);
+    opacity: 0.5;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.8;
+    transform: scale(1.05);
   }
 }
 
-@keyframes blob {
-  0% {
-    transform: translate(0px, 0px) scale(1);
-  }
-
-  33% {
-    transform: translate(30px, -50px) scale(1.1);
-  }
-
-  66% {
-    transform: translate(-20px, 20px) scale(0.9);
-  }
-
-  100% {
-    transform: translate(0px, 0px) scale(1);
-  }
-}
-
-.animate-blobs {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: -1;
-  overflow: hidden;
-  opacity: 0.5;
-}
-
-.blob {
+.glow-orb {
   position: absolute;
+  border-radius: 50%;
   filter: blur(80px);
+  z-index: -1;
   opacity: 0.4;
-  animation: blob 10s infinite;
-}
-
-.blob-1 {
-  top: 10%;
-  left: 10%;
-  width: 300px;
-  height: 300px;
-  background-color: var(--accent-pink);
-  animation-delay: 0s;
-}
-
-.blob-2 {
-  top: 40%;
-  right: 20%;
-  width: 400px;
-  height: 400px;
-  background-color: var(--accent-blue);
-  animation-delay: 2s;
-}
-
-.blob-3 {
-  bottom: 10%;
-  left: 30%;
-  width: 350px;
-  height: 350px;
-  background-color: var(--accent-green);
-  animation-delay: 4s;
 }
 
 /* ============================================================================
-   File Item
+   QR Code Styling
    ============================================================================ */
-.file-row {
+.qr-container-dark {
+  padding: 24px;
+  background: white;
+  border-radius: 24px;
+  position: relative;
+}
+
+.qr-container-dark::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 26px;
+  padding: 3px;
+  background: linear-gradient(45deg, var(--accent-purple), var(--accent-pink));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  z-index: -1;
+}
+
+/* ============================================================================
+   File List
+   ============================================================================ */
+.file-item-dark {
   display: flex;
   align-items: center;
-  padding: 12px;
-  background: white;
-  border-radius: 16px;
-  margin-bottom: 8px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 20px;
+  margin-bottom: 12px;
   transition: all 0.2s ease;
 }
 
-.file-row:hover {
-  transform: translateX(4px);
-  background: #F9FAFB;
+.file-item-dark:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
-.icon-box {
+.icon-box-dark {
   width: 48px;
   height: 48px;
+  background: linear-gradient(135deg, rgba(46, 92, 255, 0.1), rgba(157, 0, 255, 0.1));
   border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
   margin-right: 16px;
-  font-size: 1.25rem;
-}
-
-.progress-track {
-  width: 100%;
-  height: 8px;
-  background: #E5E7EB;
-  border-radius: 100px;
-  overflow: hidden;
-}
-
-.progress-fill {
-  height: 100%;
-  background: #1C1C1E;
-  border-radius: 100px;
-  transition: width 0.3s ease;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
