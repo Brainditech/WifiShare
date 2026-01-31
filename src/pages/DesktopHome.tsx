@@ -1,6 +1,5 @@
 // ============================================================================
-// DesktopHome - Vue principale Desktop avec design Apple Premium
-// Affiche le QR code, les clients connectés et les transferts
+// DesktopHome - Soft UI Bento Layout
 // ============================================================================
 
 import { useEffect, useState, useCallback } from 'react';
@@ -10,11 +9,7 @@ import {
     FolderOpen,
     Users,
     FileUp,
-    CheckCircle,
-    Copy,
-    Download,
     Smartphone,
-    Sparkles,
     ArrowUpRight,
     Zap
 } from 'lucide-react';
@@ -46,16 +41,15 @@ export function DesktopHome() {
     const [receivedFiles, setReceivedFiles] = useState<ReceivedFile[]>([]);
     const [connectedClients, setConnectedClients] = useState<ConnectedClient[]>([]);
     const [currentTransfer, setCurrentTransfer] = useState<TransferProgress | null>(null);
-    const [copied, setCopied] = useState(false);
-    const [downloadsPath, setDownloadsPath] = useState<string>('');
+
+    // Pour l'animation
+    const [showCopiedTooltip, setShowCopiedTooltip] = useState(false);
 
     useEffect(() => {
         const loadServerInfo = async () => {
             if (window.electronAPI) {
                 const info = await window.electronAPI.getServerInfo();
                 setServerInfo(info);
-                const path = await window.electronAPI.getDownloadsPath();
-                setDownloadsPath(path);
             }
         };
 
@@ -91,16 +85,19 @@ export function DesktopHome() {
     const copyUrl = useCallback(() => {
         if (serverInfo?.url) {
             navigator.clipboard.writeText(serverInfo.url);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
+            setShowCopiedTooltip(true);
+            setTimeout(() => {
+                setShowCopiedTooltip(false);
+            }, 2000);
         }
     }, [serverInfo]);
 
     const openDownloadsFolder = useCallback(async () => {
         if (window.electronAPI) {
-            await window.electronAPI.openFolder(downloadsPath + '/WiFiShare');
+            const path = await window.electronAPI.getDownloadsPath();
+            await window.electronAPI.openFolder(path + '/WiFiShare');
         }
-    }, [downloadsPath]);
+    }, []);
 
     const selectFilesToShare = useCallback(async () => {
         if (window.electronAPI) {
@@ -113,249 +110,171 @@ export function DesktopHome() {
 
     if (!serverInfo) {
         return (
-            <div className="min-h-screen flex items-center justify-center relative overflow-hidden">
-                {/* Background */}
-                <div className="bg-gradient-mesh" />
-                <div className="bg-noise" />
-
-                <div className="text-center animate-scale-in">
-                    <div className="relative">
-                        <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-[#007AFF] to-[#AF52DE] flex items-center justify-center animate-pulse-soft">
-                            <Wifi className="w-10 h-10 text-white" />
-                        </div>
-                        <div className="absolute inset-0 w-20 h-20 mx-auto rounded-full bg-gradient-to-br from-[#007AFF] to-[#AF52DE] blur-2xl opacity-40 animate-pulse-soft" />
+            <div className="min-h-screen flex items-center justify-center bg-[#F5F6FA]">
+                <div className="animate-pulse flex flex-col items-center">
+                    <div className="w-16 h-16 rounded-full bg-black flex items-center justify-center mb-4">
+                        <Wifi className="text-white" />
                     </div>
-                    <p className="text-white/60 text-lg font-medium">Démarrage du serveur...</p>
+                    <p className="text-gray-400 font-medium">Starting server...</p>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen relative overflow-hidden">
-            {/* Background Effects */}
-            <div className="bg-gradient-mesh" />
-            <div className="bg-noise" />
+        <div className="min-h-screen relative p-8 md:p-12 overflow-hidden">
+            {/* Background Blobs */}
+            <div className="animate-blobs">
+                <div className="blob blob-1"></div>
+                <div className="blob blob-2"></div>
+                <div className="blob blob-3"></div>
+            </div>
 
-            <div className="relative z-10 p-8">
+            <div className="max-w-6xl mx-auto relative z-10">
                 {/* Header */}
-                <header className="flex items-center justify-between mb-10 animate-slide-up">
-                    <div className="flex items-center gap-4">
-                        <div className="relative">
-                            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#007AFF] via-[#AF52DE] to-[#FF2D55] flex items-center justify-center shadow-lg">
-                                <Wifi className="w-7 h-7 text-white" />
-                            </div>
-                            <div className="absolute -inset-1 rounded-2xl bg-gradient-to-br from-[#007AFF] to-[#FF2D55] blur-lg opacity-30 -z-10" />
-                        </div>
-                        <div>
-                            <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-white to-white/70 bg-clip-text text-transparent">
-                                WiFiShare
-                            </h1>
-                            <p className="text-white/40 text-sm font-medium">Transfert de fichiers instantané</p>
-                        </div>
+                <header className="flex items-center justify-between mb-12">
+                    <div>
+                        <h1 className="heading-xl mb-2">Hello, User 👋</h1>
+                        <p className="text-body font-medium">Ready to share files?</p>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-2 px-4 py-2 rounded-full glass-card">
-                            <div className="status-dot status-dot-success" />
-                            <span className="text-[#34C759] text-sm font-semibold">Serveur actif</span>
-                        </div>
+                    <div className="status-pill">
+                        <div className="dot dot-success animate-pulse"></div>
+                        <span>Server Active</span>
                     </div>
                 </header>
 
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 max-w-7xl mx-auto">
-                    {/* QR Code Section */}
-                    <div className="lg:col-span-5 animate-slide-up stagger-1">
-                        <div className="glass-card p-8">
-                            <div className="flex items-center gap-3 mb-6">
-                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#5AC8FA]/20 to-[#007AFF]/20 flex items-center justify-center border border-[#007AFF]/20">
-                                    <Smartphone className="w-5 h-5 text-[#5AC8FA]" />
-                                </div>
-                                <div>
-                                    <h2 className="text-lg font-semibold text-white">Scanner pour connecter</h2>
-                                    <p className="text-white/40 text-sm">Avec l'appareil photo de votre téléphone</p>
-                                </div>
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
+
+                    {/* LEFT COLUMN (QR & INFO) - SPAN 5 */}
+                    <div className="md:col-span-5 flex flex-col gap-6">
+
+                        {/* Main QR Card */}
+                        <div className="bento-card bg-white flex flex-col items-center text-center py-10">
+                            <h2 className="heading-lg mb-2">Scan to Connect</h2>
+                            <p className="text-gray-400 text-sm mb-8">Use your phone's camera</p>
+
+                            <div className="qr-frame mb-8 pointer-events-none select-none">
+                                <QRCodeSVG
+                                    value={serverInfo.url}
+                                    size={180}
+                                    level="M"
+                                    fgColor="#1C1C1E"
+                                />
                             </div>
 
-                            {/* QR Code */}
-                            <div className="flex justify-center mb-6">
-                                <div className="qr-container">
-                                    <QRCodeSVG
-                                        value={serverInfo.url}
-                                        size={200}
-                                        level="M"
-                                        includeMargin={false}
-                                        bgColor="transparent"
-                                        fgColor="#1C1C1E"
-                                    />
-                                </div>
-                            </div>
+                            <div
+                                onClick={copyUrl}
+                                className="cursor-pointer group relative bg-gray-50 hover:bg-gray-100 rounded-xl p-4 w-full max-w-xs transition-colors"
+                            >
+                                <p className="text-label text-xs mb-1">SESSION CODE</p>
+                                <p className="text-3xl font-bold tracking-widest text-[#1C1C1E] font-mono group-hover:scale-105 transition-transform">
+                                    {serverInfo.sessionCode}
+                                </p>
 
-                            {/* Session Info */}
-                            <div className="space-y-3">
-                                <div className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/10">
-                                    <div>
-                                        <p className="text-xs text-white/40 uppercase tracking-wider mb-1">Code de session</p>
-                                        <p className="font-mono font-bold text-2xl tracking-[0.3em] text-white">
-                                            {serverInfo.sessionCode}
-                                        </p>
+                                {showCopiedTooltip && (
+                                    <div className="absolute top-0 right-0 -mt-8 bg-black text-white text-xs px-3 py-1 rounded-full animate-bounce">
+                                        Copied!
                                     </div>
-                                    <Sparkles className="w-6 h-6 text-[#FF9500]" />
-                                </div>
-
-                                <button
-                                    onClick={copyUrl}
-                                    className="w-full flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/10 hover:bg-white/8 hover:border-white/15 transition-all duration-300 group"
-                                >
-                                    <div className="flex-1 min-w-0 text-left">
-                                        <p className="text-xs text-white/40 uppercase tracking-wider mb-1">URL de connexion</p>
-                                        <p className="font-mono text-sm text-white/70 truncate">{serverInfo.url}</p>
-                                    </div>
-                                    <div className="ml-4 w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center group-hover:bg-[#007AFF]/20 transition-colors">
-                                        {copied ? (
-                                            <CheckCircle className="w-5 h-5 text-[#34C759]" />
-                                        ) : (
-                                            <Copy className="w-5 h-5 text-white/50 group-hover:text-[#007AFF]" />
-                                        )}
-                                    </div>
-                                </button>
+                                )}
                             </div>
                         </div>
+
                     </div>
 
-                    {/* Right Column */}
-                    <div className="lg:col-span-7 space-y-6">
-                        {/* Connected Clients */}
-                        <div className="glass-card p-6 animate-slide-up stagger-2">
-                            <div className="flex items-center justify-between mb-5">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#34C759]/20 to-[#30D158]/20 flex items-center justify-center border border-[#34C759]/20">
-                                        <Users className="w-5 h-5 text-[#34C759]" />
-                                    </div>
-                                    <h2 className="text-lg font-semibold text-white">Appareils connectés</h2>
+                    {/* RIGHT COLUMN (DEVICES & ACTIONS) - SPAN 7 */}
+                    <div className="md:col-span-7 flex flex-col gap-6">
+
+                        {/* Connected Devices Card (Blue Accent) */}
+                        <div className="bento-card bento-card-blue min-h-[180px]">
+                            <div className="flex justify-between items-start mb-6">
+                                <div>
+                                    <h2 className="heading-lg">Devices</h2>
+                                    <p className="text-blue-800/60 font-medium">Connected peers</p>
                                 </div>
-                                <span className="px-3 py-1.5 text-sm font-semibold bg-gradient-to-r from-[#007AFF]/20 to-[#AF52DE]/20 rounded-full text-[#007AFF] border border-[#007AFF]/20">
-                                    {connectedClients.length}
-                                </span>
+                                <div className="w-12 h-12 bg-white/50 rounded-full flex items-center justify-center">
+                                    <Users className="text-blue-600 w-6 h-6" />
+                                </div>
                             </div>
 
                             {connectedClients.length === 0 ? (
-                                <div className="text-center py-10">
-                                    <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-white/5 flex items-center justify-center">
-                                        <Smartphone className="w-8 h-8 text-white/20" />
-                                    </div>
-                                    <p className="text-white/30 font-medium mb-1">Aucun appareil connecté</p>
-                                    <p className="text-white/20 text-sm">Scannez le QR code avec votre téléphone</p>
+                                <div className="flex items-center gap-3 opacity-50">
+                                    <div className="w-2 h-2 bg-blue-400 rounded-full animate-ping"></div>
+                                    <p className="font-medium text-blue-900">Waiting for connection...</p>
                                 </div>
                             ) : (
-                                <div className="grid gap-3">
-                                    {connectedClients.map((client, index) => (
-                                        <div
-                                            key={client.id}
-                                            className="file-item"
-                                            style={{ animationDelay: `${index * 0.1}s` }}
-                                        >
-                                            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#34C759] to-[#30D158] flex items-center justify-center shadow-lg">
-                                                <Smartphone className="w-5 h-5 text-white" />
+                                <div className="flex gap-4 overflow-x-auto pb-2">
+                                    {connectedClients.map((client) => (
+                                        <div key={client.id} className="bg-white/60 backdrop-blur-sm p-4 rounded-xl flex items-center gap-3 min-w-[160px]">
+                                            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                                                <Smartphone className="w-5 h-5 text-blue-600" />
                                             </div>
-                                            <div className="flex-1 min-w-0">
-                                                <p className="font-semibold text-white">Appareil {client.id.slice(0, 4).toUpperCase()}</p>
-                                                <p className="text-sm text-[#34C759]">Connecté</p>
+                                            <div>
+                                                <p className="font-bold text-sm text-gray-800">Mobile</p>
+                                                <p className="text-xs text-gray-500 uppercase">{client.id.slice(0, 4)}</p>
                                             </div>
-                                            <div className="status-dot status-dot-success" />
+                                            <div className="w-2 h-2 bg-green-500 rounded-full ml-auto"></div>
                                         </div>
                                     ))}
                                 </div>
                             )}
                         </div>
 
-                        {/* Current Transfer */}
-                        {currentTransfer && (
-                            <div className="glass-card p-6 border-[#007AFF]/30 animate-scale-in">
-                                <div className="flex items-center gap-3 mb-4">
-                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#007AFF]/20 to-[#5AC8FA]/20 flex items-center justify-center border border-[#007AFF]/20 animate-pulse-soft">
-                                        <Zap className="w-5 h-5 text-[#007AFF]" />
-                                    </div>
-                                    <h2 className="text-lg font-semibold text-white">Transfert en cours</h2>
+                        {/* Actions Grid */}
+                        <div className="grid grid-cols-2 gap-6">
+
+                            {/* Send Files Button (Big) */}
+                            <button
+                                onClick={selectFilesToShare}
+                                disabled={connectedClients.length === 0}
+                                className="bento-card bg-[#1C1C1E] text-white hover:bg-black group flex flex-col justify-between items-start text-left min-h-[180px] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border-none"
+                            >
+                                <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center group-hover:bg-white/20 transition-colors">
+                                    <FileUp className="w-6 h-6 text-white" />
                                 </div>
-                                <div className="space-y-3">
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-white/70 truncate max-w-[70%]">{currentTransfer.fileName}</span>
-                                        <span className="text-[#007AFF] font-semibold">{currentTransfer.percent}%</span>
+                                <div>
+                                    <h3 className="text-xl font-bold">Send Files</h3>
+                                    <p className="text-gray-400 text-sm mt-1">To connected device</p>
+                                </div>
+                            </button>
+
+                            {/* Downloads Folder Button */}
+                            <button
+                                onClick={openDownloadsFolder}
+                                className="bento-card bento-card-green hover:bg-[#d1fae5] group flex flex-col justify-between items-start text-left min-h-[180px] cursor-pointer border-none"
+                            >
+                                <div className="w-12 h-12 bg-green-200/50 rounded-full flex items-center justify-center">
+                                    <FolderOpen className="w-6 h-6 text-green-800" />
+                                </div>
+                                <div className="w-full">
+                                    <div className="flex justify-between items-end">
+                                        <h3 className="text-xl font-bold text-green-900">Downloads</h3>
+                                        <ArrowUpRight className="text-green-700 w-5 h-5 mb-1" />
                                     </div>
-                                    <div className="progress-bar">
+                                    <p className="text-green-800/60 text-sm mt-1">{receivedFiles.length} files received</p>
+                                </div>
+                            </button>
+                        </div>
+
+                        {/* Transfer Progress (Conditional) */}
+                        {currentTransfer && (
+                            <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 w-full max-w-md bg-white rounded-full shadow-xl p-2 pr-6 flex items-center gap-4 z-50 animate-float">
+                                <div className="w-12 h-12 bg-black rounded-full flex items-center justify-center shrink-0">
+                                    <Zap className="text-white w-5 h-5 fill-current" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="font-bold text-sm truncate">{currentTransfer.fileName}</p>
+                                    <div className="h-1.5 w-full bg-gray-100 rounded-full mt-1 overflow-hidden">
                                         <div
-                                            className="progress-bar-fill"
+                                            className="h-full bg-black rounded-full transition-all duration-300"
                                             style={{ width: `${currentTransfer.percent}%` }}
                                         />
                                     </div>
                                 </div>
+                                <span className="font-bold text-sm">{currentTransfer.percent}%</span>
                             </div>
                         )}
 
-                        {/* Received Files */}
-                        <div className="glass-card p-6 animate-slide-up stagger-3">
-                            <div className="flex items-center justify-between mb-5">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#AF52DE]/20 to-[#FF2D55]/20 flex items-center justify-center border border-[#AF52DE]/20">
-                                        <Download className="w-5 h-5 text-[#AF52DE]" />
-                                    </div>
-                                    <h2 className="text-lg font-semibold text-white">Fichiers reçus</h2>
-                                </div>
-                                <button
-                                    onClick={openDownloadsFolder}
-                                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white/70 bg-white/5 hover:bg-white/10 rounded-xl border border-white/10 hover:border-white/15 transition-all duration-300"
-                                >
-                                    <FolderOpen className="w-4 h-4" />
-                                    <span>Ouvrir</span>
-                                    <ArrowUpRight className="w-3.5 h-3.5" />
-                                </button>
-                            </div>
-
-                            {receivedFiles.length === 0 ? (
-                                <div className="text-center py-10">
-                                    <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-white/5 flex items-center justify-center">
-                                        <FileUp className="w-8 h-8 text-white/20" />
-                                    </div>
-                                    <p className="text-white/30 font-medium mb-1">Aucun fichier reçu</p>
-                                    <p className="text-white/20 text-sm">Les fichiers transférés apparaîtront ici</p>
-                                </div>
-                            ) : (
-                                <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
-                                    {receivedFiles.map((file, index) => (
-                                        <div key={index} className="file-item">
-                                            <div className="file-icon">
-                                                <CheckCircle className="w-5 h-5 text-[#34C759]" />
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <p className="font-medium text-white truncate">{file.name}</p>
-                                                <p className="text-sm text-white/40">
-                                                    {file.timestamp.toLocaleTimeString('fr-FR', {
-                                                        hour: '2-digit',
-                                                        minute: '2-digit'
-                                                    })}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Share Button */}
-                        <button
-                            onClick={selectFilesToShare}
-                            disabled={connectedClients.length === 0}
-                            className="w-full py-5 rounded-2xl font-semibold text-lg flex items-center justify-center gap-3 transition-all duration-300 animate-slide-up stagger-4 disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none bg-gradient-to-r from-[#007AFF] via-[#AF52DE] to-[#FF2D55] hover:scale-[1.02] active:scale-[0.98] shadow-lg hover:shadow-xl"
-                            style={{
-                                boxShadow: connectedClients.length > 0
-                                    ? '0 8px 32px rgba(0, 122, 255, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1) inset'
-                                    : 'none'
-                            }}
-                        >
-                            <FileUp className="w-6 h-6" />
-                            <span>Partager des fichiers</span>
-                        </button>
                     </div>
                 </div>
             </div>

@@ -1,6 +1,5 @@
 // ============================================================================
-// WebClient - Interface mobile avec design Apple Premium
-// Permet d'envoyer et recevoir des fichiers vers/depuis le PC
+// WebClient - Soft UI Mobile Design
 // ============================================================================
 
 import { useEffect, useState, useCallback, useRef } from 'react';
@@ -9,15 +8,12 @@ import {
     Wifi,
     Upload,
     Download,
-    FileIcon,
     CheckCircle,
     XCircle,
-    Smartphone,
     Monitor,
     Loader2,
-    Sparkles,
-    Zap,
-    ArrowUpRight
+    ArrowRight,
+    Zap
 } from 'lucide-react';
 
 type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
@@ -33,7 +29,7 @@ interface TransferProgress {
     direction: 'upload' | 'download';
 }
 
-const CHUNK_SIZE = 64 * 1024; // 64KB chunks
+const CHUNK_SIZE = 64 * 1024;
 
 export function WebClient() {
     const [searchParams] = useSearchParams();
@@ -65,17 +61,12 @@ export function WebClient() {
             case 'available-files':
                 setAvailableFiles(message.files as AvailableFile[]);
                 break;
-            case 'file-start-ack':
-            case 'file-chunk-ack':
-                break;
             case 'file-complete':
                 setCurrentTransfer(null);
                 setCompletedTransfers(prev => [...prev, message.savedAs as string]);
                 break;
             case 'file-ready':
                 downloadFile(message.downloadUrl as string, message.fileName as string);
-                break;
-            case 'pong':
                 break;
             case 'error':
                 setError(message.message as string);
@@ -86,7 +77,7 @@ export function WebClient() {
 
     useEffect(() => {
         if (!sessionCode) {
-            setError('Code de session manquant');
+            setError('Missing session code');
             setConnectionState('error');
             return;
         }
@@ -120,20 +111,11 @@ export function WebClient() {
                 }
             };
 
-            ws.onerror = () => {
-                console.error('WebSocket error');
-            };
-
             ws.onclose = () => {
-                if (pingInterval) {
-                    clearInterval(pingInterval);
-                    pingInterval = null;
-                }
+                if (pingInterval) clearInterval(pingInterval);
                 if (connectionStateRef.current === 'connected') {
                     setConnectionState('disconnected');
-                    reconnectTimeout = setTimeout(() => {
-                        connect();
-                    }, 2000);
+                    reconnectTimeout = setTimeout(connect, 2000);
                 }
             };
         };
@@ -163,16 +145,13 @@ export function WebClient() {
     const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const files = event.target.files;
         if (!files || files.length === 0) return;
-        const file = files[0];
-        await sendFile(file);
-        if (fileInputRef.current) {
-            fileInputRef.current.value = '';
-        }
+        await sendFile(files[0]);
+        if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
     const sendFile = async (file: File) => {
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-            setError('Non connecté au serveur');
+            setError('Not connected');
             return;
         }
 
@@ -182,12 +161,7 @@ export function WebClient() {
 
         ws.send(JSON.stringify({
             type: 'file-start',
-            payload: {
-                fileId,
-                fileName: file.name,
-                fileSize: file.size,
-                totalChunks,
-            },
+            payload: { fileId, fileName: file.name, fileSize: file.size, totalChunks },
         }));
 
         setCurrentTransfer({ fileName: file.name, percent: 0, direction: 'upload' });
@@ -198,18 +172,12 @@ export function WebClient() {
         const sendNextChunk = () => {
             const start = chunkIndex * CHUNK_SIZE;
             const end = Math.min(start + CHUNK_SIZE, file.size);
-            const chunk = file.slice(start, end);
 
             reader.onload = () => {
                 const base64 = (reader.result as string).split(',')[1];
-
                 ws.send(JSON.stringify({
                     type: 'file-chunk',
-                    payload: {
-                        fileId,
-                        chunkIndex,
-                        data: base64,
-                    },
+                    payload: { fileId, chunkIndex, data: base64 },
                 }));
 
                 const percent = Math.round(((chunkIndex + 1) / totalChunks) * 100);
@@ -219,14 +187,11 @@ export function WebClient() {
                 if (chunkIndex < totalChunks) {
                     setTimeout(sendNextChunk, 10);
                 } else {
-                    ws.send(JSON.stringify({
-                        type: 'file-end',
-                        payload: { fileId },
-                    }));
+                    ws.send(JSON.stringify({ type: 'file-end', payload: { fileId } }));
                 }
             };
 
-            reader.readAsDataURL(chunk);
+            reader.readAsDataURL(file.slice(start, end));
         };
 
         sendNextChunk();
@@ -234,205 +199,152 @@ export function WebClient() {
 
     const requestFile = (fileId: string) => {
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-        wsRef.current.send(JSON.stringify({
-            type: 'file-request',
-            payload: { fileId },
-        }));
+        wsRef.current.send(JSON.stringify({ type: 'file-request', payload: { fileId } }));
     };
 
-    // Error state
     if (connectionState === 'error') {
         return (
-            <div className="min-h-screen flex items-center justify-center p-6 relative overflow-hidden">
-                <div className="bg-gradient-mesh" />
-                <div className="bg-noise" />
-
-                <div className="text-center relative z-10 animate-scale-in">
-                    <div className="relative mb-6">
-                        <div className="w-20 h-20 mx-auto rounded-full bg-gradient-to-br from-[#FF3B30]/20 to-[#FF2D55]/20 flex items-center justify-center border border-[#FF3B30]/30">
-                            <XCircle className="w-10 h-10 text-[#FF3B30]" />
-                        </div>
+            <div className="min-h-screen flex items-center justify-center p-6 bg-[#F5F6FA]">
+                <div className="text-center">
+                    <div className="w-20 h-20 mx-auto mb-6 bg-red-100 rounded-full flex items-center justify-center">
+                        <XCircle className="w-10 h-10 text-red-500" />
                     </div>
-                    <h1 className="text-2xl font-bold text-white mb-2">Connexion impossible</h1>
-                    <p className="text-white/50 mb-6 max-w-xs mx-auto">{error}</p>
-                    <button
-                        onClick={() => window.location.reload()}
-                        className="px-8 py-3 bg-white/10 hover:bg-white/15 rounded-xl font-semibold transition-all duration-300 border border-white/10"
-                    >
-                        Réessayer
+                    <h1 className="text-2xl font-bold text-gray-900 mb-2">Connection Failed</h1>
+                    <p className="text-gray-500 mb-8">{error}</p>
+                    <button onClick={() => window.location.reload()} className="btn btn-primary w-full max-w-xs">
+                        Try Again
                     </button>
                 </div>
             </div>
         );
     }
 
-    // Connecting state
     if (connectionState === 'connecting') {
         return (
-            <div className="min-h-screen flex items-center justify-center p-6 relative overflow-hidden">
-                <div className="bg-gradient-mesh" />
-                <div className="bg-noise" />
-
-                <div className="text-center relative z-10 animate-scale-in">
-                    <div className="relative mb-6">
-                        <div className="w-20 h-20 mx-auto rounded-full bg-gradient-to-br from-[#007AFF] to-[#AF52DE] flex items-center justify-center animate-pulse-soft">
-                            <Loader2 className="w-10 h-10 text-white animate-spin" />
-                        </div>
-                        <div className="absolute inset-0 w-20 h-20 mx-auto rounded-full bg-gradient-to-br from-[#007AFF] to-[#AF52DE] blur-2xl opacity-30" />
+            <div className="min-h-screen flex items-center justify-center p-6 bg-[#F5F6FA]">
+                <div className="text-center">
+                    <div className="w-20 h-20 mx-auto mb-6 bg-white rounded-full shadow-lg flex items-center justify-center">
+                        <Loader2 className="w-8 h-8 text-black animate-spin" />
                     </div>
-                    <h1 className="text-2xl font-bold text-white mb-2">Connexion...</h1>
-                    <p className="text-white/50">Connexion au serveur WiFiShare</p>
+                    <h1 className="text-xl font-bold text-gray-900">Connecting...</h1>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen relative overflow-hidden safe-area-top safe-area-bottom">
-            {/* Background */}
-            <div className="bg-gradient-mesh" />
-            <div className="bg-noise" />
-
-            <div className="relative z-10">
-                {/* Header */}
-                <header className="sticky top-0 z-20 px-4 py-4 glass border-b border-white/10">
-                    <div className="flex items-center justify-between max-w-lg mx-auto">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#007AFF] via-[#AF52DE] to-[#FF2D55] flex items-center justify-center shadow-lg">
-                                <Wifi className="w-5 h-5 text-white" />
-                            </div>
-                            <div>
-                                <h1 className="font-bold text-white">WiFiShare</h1>
-                                <p className="text-xs text-white/40">Connecté au PC</p>
-                            </div>
+        <div className="min-h-screen bg-[#F5F6FA] pb-safe-bottom">
+            {/* Header */}
+            <header className="px-6 pt-8 pb-6 bg-white rounded-b-[32px] shadow-sm sticky top-0 z-10">
+                <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-black rounded-full flex items-center justify-center">
+                            <Wifi className="w-5 h-5 text-white" />
                         </div>
-
-                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#34C759]/10 border border-[#34C759]/20">
-                            <div className="status-dot status-dot-success" />
-                            <span className="text-[#34C759] text-xs font-semibold">En ligne</span>
-                        </div>
+                        <span className="font-bold text-lg">WiFiShare</span>
                     </div>
-                </header>
-
-                <main className="p-4 space-y-5 max-w-lg mx-auto pb-8">
-                    {/* Connection Info */}
-                    <div className="glass-card p-5 animate-slide-up">
-                        <div className="flex items-center justify-center gap-4 mb-4">
-                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#AF52DE]/20 to-[#FF2D55]/20 flex items-center justify-center border border-[#AF52DE]/20">
-                                <Smartphone className="w-6 h-6 text-[#AF52DE]" />
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <div className="w-12 border-t-2 border-dashed border-white/20" />
-                                <Sparkles className="w-5 h-5 text-[#FF9500]" />
-                                <div className="w-12 border-t-2 border-dashed border-white/20" />
-                            </div>
-                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#007AFF]/20 to-[#5AC8FA]/20 flex items-center justify-center border border-[#007AFF]/20">
-                                <Monitor className="w-6 h-6 text-[#007AFF]" />
-                            </div>
-                        </div>
-                        <div className="text-center">
-                            <p className="font-semibold text-white">Connexion établie</p>
-                            <p className="text-sm text-white/40 font-mono">Session: {sessionCode}</p>
-                        </div>
+                    <div className="status-pill text-xs">
+                        <div className="dot dot-success animate-pulse"></div>
+                        <span>Online</span>
                     </div>
+                </div>
+            </header>
 
-                    {/* Upload Section */}
-                    <div className="glass-card p-6 animate-slide-up stagger-1">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#007AFF]/20 to-[#5AC8FA]/20 flex items-center justify-center border border-[#007AFF]/20">
-                                <Upload className="w-5 h-5 text-[#007AFF]" />
-                            </div>
-                            <h2 className="text-lg font-semibold text-white">Envoyer vers le PC</h2>
-                        </div>
+            <main className="p-6 space-y-6">
 
-                        <input
-                            ref={fileInputRef}
-                            type="file"
-                            onChange={handleFileSelect}
-                            className="hidden"
-                            id="file-input"
-                        />
-
-                        <label
-                            htmlFor="file-input"
-                            className="block w-full py-10 border-2 border-dashed border-white/15 hover:border-[#007AFF]/50 rounded-2xl cursor-pointer transition-all duration-300 text-center group hover:bg-white/5"
-                        >
-                            <div className="w-14 h-14 mx-auto mb-3 rounded-xl bg-gradient-to-br from-white/5 to-white/10 flex items-center justify-center group-hover:from-[#007AFF]/20 group-hover:to-[#5AC8FA]/20 transition-all duration-300">
-                                <Upload className="w-7 h-7 text-white/30 group-hover:text-[#007AFF] transition-colors" />
-                            </div>
-                            <p className="text-white/50 font-medium group-hover:text-white/70 transition-colors">
-                                Toucher pour sélectionner
-                            </p>
-                            <p className="text-white/30 text-sm mt-1">Photos, vidéos, documents...</p>
-                        </label>
+                {/* Connection Status Card */}
+                <div className="bento-card bento-card-purple flex items-center justify-between p-6">
+                    <div>
+                        <p className="text-purple-900/60 font-semibold text-xs uppercase mb-1">CONNECTED TO</p>
+                        <h2 className="text-xl font-bold text-purple-900">Desktop App</h2>
                     </div>
+                    <div className="w-12 h-12 bg-white/50 rounded-full flex items-center justify-center">
+                        <Monitor className="w-6 h-6 text-purple-700" />
+                    </div>
+                </div>
 
-                    {/* Transfer Progress */}
-                    {currentTransfer && (
-                        <div className="glass-card p-5 border-[#007AFF]/30 animate-scale-in">
-                            <div className="flex items-center gap-3 mb-4">
-                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#007AFF]/20 to-[#5AC8FA]/20 flex items-center justify-center border border-[#007AFF]/20 animate-pulse-soft">
-                                    <Zap className="w-5 h-5 text-[#007AFF]" />
+                {/* Upload Section */}
+                <div>
+                    <h3 className="heading-lg mb-4 text-xl">Select File</h3>
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        onChange={handleFileSelect}
+                        className="hidden"
+                        id="mobile-upload"
+                    />
+                    <label
+                        htmlFor="mobile-upload"
+                        className="bento-card bg-white active:scale-95 cursor-pointer flex flex-col items-center justify-center py-12 border-2 border-dashed border-gray-200 hover:border-black transition-all"
+                    >
+                        <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
+                            <Upload className="w-8 h-8 text-black" />
+                        </div>
+                        <p className="font-bold text-lg">Tap to Upload</p>
+                        <p className="text-gray-400 text-sm">Photos, Videos, Docs</p>
+                    </label>
+                </div>
+
+                {/* Downloads Section */}
+                {(completedTransfers.length > 0 || availableFiles.length > 0) && (
+                    <div>
+                        <h3 className="heading-lg mb-4 text-xl">Files</h3>
+
+                        {/* Completed Transfers */}
+                        {completedTransfers.map((fileName, idx) => (
+                            <div key={`comp-${idx}`} className="file-row">
+                                <div className="icon-box bg-green-100 text-green-600">
+                                    <CheckCircle className="w-6 h-6" />
                                 </div>
-                                <span className="font-semibold text-white">
-                                    {currentTransfer.direction === 'upload' ? 'Envoi en cours...' : 'Téléchargement...'}
-                                </span>
-                            </div>
-                            <p className="text-sm text-white/50 truncate mb-3">{currentTransfer.fileName}</p>
-                            <div className="progress-bar">
-                                <div
-                                    className="progress-bar-fill"
-                                    style={{ width: `${currentTransfer.percent}%` }}
-                                />
-                            </div>
-                            <p className="text-right text-sm text-[#007AFF] font-semibold mt-2">{currentTransfer.percent}%</p>
-                        </div>
-                    )}
-
-                    {/* Completed Transfers */}
-                    {completedTransfers.length > 0 && (
-                        <div className="glass-card p-5 animate-slide-up stagger-2">
-                            <h3 className="text-sm font-semibold text-white/50 mb-3">Transferts terminés</h3>
-                            <div className="space-y-2">
-                                {completedTransfers.slice(-5).map((fileName, index) => (
-                                    <div key={index} className="flex items-center gap-3 p-3 rounded-xl bg-[#34C759]/10 border border-[#34C759]/20">
-                                        <CheckCircle className="w-5 h-5 text-[#34C759]" />
-                                        <span className="text-sm text-white truncate flex-1">{fileName}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Available Files from PC */}
-                    {availableFiles.length > 0 && (
-                        <div className="glass-card p-6 animate-slide-up stagger-3">
-                            <div className="flex items-center gap-3 mb-4">
-                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#AF52DE]/20 to-[#FF2D55]/20 flex items-center justify-center border border-[#AF52DE]/20">
-                                    <Download className="w-5 h-5 text-[#AF52DE]" />
+                                <div className="flex-1 min-w-0">
+                                    <p className="font-bold text-sm truncate">{fileName}</p>
+                                    <p className="text-xs text-green-600 font-medium">Completed</p>
                                 </div>
-                                <h2 className="text-lg font-semibold text-white">Fichiers disponibles</h2>
                             </div>
+                        ))}
 
-                            <div className="space-y-2">
-                                {availableFiles.map(file => (
-                                    <button
-                                        key={file.id}
-                                        onClick={() => requestFile(file.id)}
-                                        className="file-item w-full"
-                                    >
-                                        <div className="file-icon">
-                                            <FileIcon className="w-5 h-5 text-[#AF52DE]" />
-                                        </div>
-                                        <span className="flex-1 text-left text-white truncate">{file.name}</span>
-                                        <ArrowUpRight className="w-5 h-5 text-white/30" />
-                                    </button>
-                                ))}
+                        {/* Available Files */}
+                        {availableFiles.map((file) => (
+                            <div
+                                key={file.id}
+                                onClick={() => requestFile(file.id)}
+                                className="file-row active:bg-gray-100"
+                            >
+                                <div className="icon-box bg-blue-100 text-blue-600">
+                                    <Download className="w-6 h-6" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="font-bold text-sm truncate">{file.name}</p>
+                                    <p className="text-xs text-gray-400 font-medium">Tap to download</p>
+                                </div>
+                                <ArrowRight className="w-5 h-5 text-gray-300" />
                             </div>
+                        ))}
+                    </div>
+                )}
+
+            </main>
+
+            {/* Sticky Transfer Progress */}
+            {currentTransfer && (
+                <div className="fixed bottom-6 left-4 right-4 bg-black text-white p-4 rounded-3xl shadow-2xl flex items-center gap-4 z-50 animate-float">
+                    <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center shrink-0">
+                        <Zap className="w-5 h-5 text-yellow-400 fill-current" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <div className="flex justify-between mb-1">
+                            <span className="font-bold text-sm truncate max-w-[150px]">{currentTransfer.fileName}</span>
+                            <span className="font-mono text-xs opacity-70">{currentTransfer.percent}%</span>
                         </div>
-                    )}
-                </main>
-            </div>
+                        <div className="h-1.5 w-full bg-white/20 rounded-full overflow-hidden">
+                            <div
+                                className="h-full bg-white rounded-full transition-all duration-300"
+                                style={{ width: `${currentTransfer.percent}%` }}
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
