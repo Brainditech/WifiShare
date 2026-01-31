@@ -11,19 +11,22 @@ import './index.css';
 
 // Detect if running in Electron
 const isElectron = (): boolean => {
-  return typeof window !== 'undefined' &&
-    typeof window.electronAPI !== 'undefined';
+  const userAgent = navigator.userAgent.toLowerCase();
+  return userAgent.indexOf(' electron/') > -1 ||
+    (typeof window !== 'undefined' && typeof window.electronAPI !== 'undefined');
 };
 
 function AppRoutes() {
   const [mode, setMode] = useState<'desktop' | 'web' | 'loading'>('loading');
 
   useEffect(() => {
-    // If in Electron, show desktop mode
-    if (isElectron()) {
+    // Check for query param override
+    const params = new URLSearchParams(window.location.search);
+    const modeParam = params.get('mode');
+
+    if (modeParam === 'desktop' || isElectron()) {
       setMode('desktop');
     } else {
-      // Web client mode (accessed via browser)
       setMode('web');
     }
   }, []);
