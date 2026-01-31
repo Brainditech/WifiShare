@@ -1,5 +1,5 @@
 // ============================================================================
-// WebClient - Interface web responsive pour mobiles/navigateurs
+// WebClient - Interface mobile avec design Apple Premium
 // Permet d'envoyer et recevoir des fichiers vers/depuis le PC
 // ============================================================================
 
@@ -12,10 +12,12 @@ import {
     FileIcon,
     CheckCircle,
     XCircle,
-    RefreshCw,
     Smartphone,
     Monitor,
-    Loader2
+    Loader2,
+    Sparkles,
+    Zap,
+    ArrowUpRight
 } from 'lucide-react';
 
 type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
@@ -34,7 +36,6 @@ interface TransferProgress {
 const CHUNK_SIZE = 64 * 1024; // 64KB chunks
 
 export function WebClient() {
-    // Lire le code depuis ?code= query parameter
     const [searchParams] = useSearchParams();
     const sessionCode = searchParams.get('code') || '';
 
@@ -48,7 +49,6 @@ export function WebClient() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const connectionStateRef = useRef<ConnectionState>('connecting');
 
-    // Keep ref in sync with state
     useEffect(() => {
         connectionStateRef.current = connectionState;
     }, [connectionState]);
@@ -58,38 +58,25 @@ export function WebClient() {
             case 'auth-success':
                 setConnectionState('connected');
                 break;
-
             case 'auth-failed':
                 setConnectionState('error');
                 setError(message.reason as string || 'Authentification échouée');
                 break;
-
             case 'available-files':
                 setAvailableFiles(message.files as AvailableFile[]);
                 break;
-
             case 'file-start-ack':
-                // Server acknowledged file start
-                break;
-
             case 'file-chunk-ack':
-                // Chunk received, continue sending
                 break;
-
             case 'file-complete':
                 setCurrentTransfer(null);
                 setCompletedTransfers(prev => [...prev, message.savedAs as string]);
                 break;
-
             case 'file-ready':
-                // Download file via HTTP
                 downloadFile(message.downloadUrl as string, message.fileName as string);
                 break;
-
             case 'pong':
-                // Keep-alive response
                 break;
-
             case 'error':
                 setError(message.message as string);
                 setCurrentTransfer(null);
@@ -97,10 +84,9 @@ export function WebClient() {
         }
     }, []);
 
-    // Connect to WebSocket server
     useEffect(() => {
         if (!sessionCode) {
-            setError('Code de session manquant. Veuillez scanner à nouveau le QR code.');
+            setError('Code de session manquant');
             setConnectionState('error');
             return;
         }
@@ -117,15 +103,12 @@ export function WebClient() {
             wsRef.current = ws;
 
             ws.onopen = () => {
-                // Authenticate with session code
                 ws?.send(JSON.stringify({ type: 'auth', sessionCode }));
-
-                // Start keep-alive ping
                 pingInterval = setInterval(() => {
                     if (ws?.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: 'ping' }));
                     }
-                }, 30000); // Ping every 30 seconds
+                }, 30000);
             };
 
             ws.onmessage = (event) => {
@@ -146,13 +129,9 @@ export function WebClient() {
                     clearInterval(pingInterval);
                     pingInterval = null;
                 }
-
-                // Only try to reconnect if we were connected
                 if (connectionStateRef.current === 'connected') {
                     setConnectionState('disconnected');
-                    // Try to reconnect after 2 seconds
                     reconnectTimeout = setTimeout(() => {
-                        console.log('Attempting to reconnect...');
                         connect();
                     }, 2000);
                 }
@@ -165,7 +144,7 @@ export function WebClient() {
             if (pingInterval) clearInterval(pingInterval);
             if (reconnectTimeout) clearTimeout(reconnectTimeout);
             if (ws) {
-                ws.onclose = null; // Prevent reconnect on intentional close
+                ws.onclose = null;
                 ws.close();
             }
         };
@@ -184,11 +163,8 @@ export function WebClient() {
     const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const files = event.target.files;
         if (!files || files.length === 0) return;
-
         const file = files[0];
         await sendFile(file);
-
-        // Reset input
         if (fileInputRef.current) {
             fileInputRef.current.value = '';
         }
@@ -204,7 +180,6 @@ export function WebClient() {
         const fileId = Math.random().toString(36).substring(2, 10);
         const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
 
-        // Start file transfer
         ws.send(JSON.stringify({
             type: 'file-start',
             payload: {
@@ -217,7 +192,6 @@ export function WebClient() {
 
         setCurrentTransfer({ fileName: file.name, percent: 0, direction: 'upload' });
 
-        // Read and send chunks
         const reader = new FileReader();
         let chunkIndex = 0;
 
@@ -243,10 +217,8 @@ export function WebClient() {
 
                 chunkIndex++;
                 if (chunkIndex < totalChunks) {
-                    // Add small delay to avoid overwhelming the connection
                     setTimeout(sendNextChunk, 10);
                 } else {
-                    // All chunks sent
                     ws.send(JSON.stringify({
                         type: 'file-end',
                         payload: { fileId },
@@ -262,7 +234,6 @@ export function WebClient() {
 
     const requestFile = (fileId: string) => {
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-
         wsRef.current.send(JSON.stringify({
             type: 'file-request',
             payload: { fileId },
@@ -272,14 +243,21 @@ export function WebClient() {
     // Error state
     if (connectionState === 'error') {
         return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-red-900/30 to-slate-900 flex items-center justify-center p-6">
-                <div className="text-center">
-                    <XCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
+            <div className="min-h-screen flex items-center justify-center p-6 relative overflow-hidden">
+                <div className="bg-gradient-mesh" />
+                <div className="bg-noise" />
+
+                <div className="text-center relative z-10 animate-scale-in">
+                    <div className="relative mb-6">
+                        <div className="w-20 h-20 mx-auto rounded-full bg-gradient-to-br from-[#FF3B30]/20 to-[#FF2D55]/20 flex items-center justify-center border border-[#FF3B30]/30">
+                            <XCircle className="w-10 h-10 text-[#FF3B30]" />
+                        </div>
+                    </div>
                     <h1 className="text-2xl font-bold text-white mb-2">Connexion impossible</h1>
-                    <p className="text-white/70 mb-4">{error}</p>
+                    <p className="text-white/50 mb-6 max-w-xs mx-auto">{error}</p>
                     <button
                         onClick={() => window.location.reload()}
-                        className="px-6 py-2 bg-white/10 hover:bg-white/20 rounded-lg transition-colors"
+                        className="px-8 py-3 bg-white/10 hover:bg-white/15 rounded-xl font-semibold transition-all duration-300 border border-white/10"
                     >
                         Réessayer
                     </button>
@@ -291,135 +269,170 @@ export function WebClient() {
     // Connecting state
     if (connectionState === 'connecting') {
         return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-6">
-                <div className="text-center">
-                    <Loader2 className="w-16 h-16 text-purple-400 mx-auto mb-4 animate-spin" />
+            <div className="min-h-screen flex items-center justify-center p-6 relative overflow-hidden">
+                <div className="bg-gradient-mesh" />
+                <div className="bg-noise" />
+
+                <div className="text-center relative z-10 animate-scale-in">
+                    <div className="relative mb-6">
+                        <div className="w-20 h-20 mx-auto rounded-full bg-gradient-to-br from-[#007AFF] to-[#AF52DE] flex items-center justify-center animate-pulse-soft">
+                            <Loader2 className="w-10 h-10 text-white animate-spin" />
+                        </div>
+                        <div className="absolute inset-0 w-20 h-20 mx-auto rounded-full bg-gradient-to-br from-[#007AFF] to-[#AF52DE] blur-2xl opacity-30" />
+                    </div>
                     <h1 className="text-2xl font-bold text-white mb-2">Connexion...</h1>
-                    <p className="text-white/70">Connexion au serveur WiFiShare</p>
+                    <p className="text-white/50">Connexion au serveur WiFiShare</p>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white">
-            {/* Header */}
-            <header className="p-4 flex items-center justify-between border-b border-white/10">
-                <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center">
-                        <Wifi className="w-5 h-5" />
-                    </div>
-                    <div>
-                        <h1 className="font-bold">WiFiShare</h1>
-                        <p className="text-xs text-white/50">Connecté au PC</p>
-                    </div>
-                </div>
+        <div className="min-h-screen relative overflow-hidden safe-area-top safe-area-bottom">
+            {/* Background */}
+            <div className="bg-gradient-mesh" />
+            <div className="bg-noise" />
 
-                <div className="flex items-center gap-2 px-2 py-1 bg-green-500/20 rounded-full">
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                    <span className="text-green-400 text-xs">Connecté</span>
-                </div>
-            </header>
-
-            <main className="p-4 space-y-6 max-w-lg mx-auto">
-                {/* Connection Info */}
-                <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-4 border border-white/10">
-                    <div className="flex items-center gap-4">
-                        <div className="flex items-center justify-center">
-                            <Smartphone className="w-8 h-8 text-purple-400" />
-                            <div className="w-12 border-t-2 border-dashed border-purple-400/50 mx-2"></div>
-                            <Monitor className="w-8 h-8 text-purple-400" />
+            <div className="relative z-10">
+                {/* Header */}
+                <header className="sticky top-0 z-20 px-4 py-4 glass border-b border-white/10">
+                    <div className="flex items-center justify-between max-w-lg mx-auto">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#007AFF] via-[#AF52DE] to-[#FF2D55] flex items-center justify-center shadow-lg">
+                                <Wifi className="w-5 h-5 text-white" />
+                            </div>
+                            <div>
+                                <h1 className="font-bold text-white">WiFiShare</h1>
+                                <p className="text-xs text-white/40">Connecté au PC</p>
+                            </div>
                         </div>
-                        <div>
-                            <p className="font-medium">Connexion établie</p>
-                            <p className="text-sm text-white/50">Session: {sessionCode}</p>
+
+                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#34C759]/10 border border-[#34C759]/20">
+                            <div className="status-dot status-dot-success" />
+                            <span className="text-[#34C759] text-xs font-semibold">En ligne</span>
                         </div>
                     </div>
-                </div>
+                </header>
 
-                {/* Upload Section */}
-                <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-6 border border-white/10">
-                    <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                        <Upload className="w-5 h-5 text-purple-400" />
-                        Envoyer vers le PC
-                    </h2>
-
-                    <input
-                        ref={fileInputRef}
-                        type="file"
-                        onChange={handleFileSelect}
-                        className="hidden"
-                        id="file-input"
-                    />
-
-                    <label
-                        htmlFor="file-input"
-                        className="block w-full py-8 border-2 border-dashed border-white/20 hover:border-purple-500/50 rounded-xl cursor-pointer transition-colors text-center"
-                    >
-                        <Upload className="w-10 h-10 mx-auto mb-2 text-white/50" />
-                        <p className="text-white/70">Toucher pour sélectionner un fichier</p>
-                    </label>
-                </div>
-
-                {/* Transfer Progress */}
-                {currentTransfer && (
-                    <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-4 border border-purple-500/50">
-                        <div className="flex items-center gap-3 mb-3">
-                            <RefreshCw className="w-5 h-5 text-purple-400 animate-spin" />
-                            <span className="font-medium">
-                                {currentTransfer.direction === 'upload' ? 'Envoi en cours...' : 'Téléchargement...'}
-                            </span>
+                <main className="p-4 space-y-5 max-w-lg mx-auto pb-8">
+                    {/* Connection Info */}
+                    <div className="glass-card p-5 animate-slide-up">
+                        <div className="flex items-center justify-center gap-4 mb-4">
+                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#AF52DE]/20 to-[#FF2D55]/20 flex items-center justify-center border border-[#AF52DE]/20">
+                                <Smartphone className="w-6 h-6 text-[#AF52DE]" />
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <div className="w-12 border-t-2 border-dashed border-white/20" />
+                                <Sparkles className="w-5 h-5 text-[#FF9500]" />
+                                <div className="w-12 border-t-2 border-dashed border-white/20" />
+                            </div>
+                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#007AFF]/20 to-[#5AC8FA]/20 flex items-center justify-center border border-[#007AFF]/20">
+                                <Monitor className="w-6 h-6 text-[#007AFF]" />
+                            </div>
                         </div>
-                        <p className="text-sm text-white/70 truncate mb-2">{currentTransfer.fileName}</p>
-                        <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-                            <div
-                                className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300"
-                                style={{ width: `${currentTransfer.percent}%` }}
-                            />
+                        <div className="text-center">
+                            <p className="font-semibold text-white">Connexion établie</p>
+                            <p className="text-sm text-white/40 font-mono">Session: {sessionCode}</p>
                         </div>
-                        <p className="text-right text-sm text-white/50 mt-1">{currentTransfer.percent}%</p>
                     </div>
-                )}
 
-                {/* Completed Transfers */}
-                {completedTransfers.length > 0 && (
-                    <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-4 border border-white/10">
-                        <h3 className="text-sm font-medium text-white/70 mb-3">Transferts terminés</h3>
-                        <div className="space-y-2">
-                            {completedTransfers.map((fileName, index) => (
-                                <div key={index} className="flex items-center gap-2 text-green-400">
-                                    <CheckCircle className="w-4 h-4" />
-                                    <span className="text-sm truncate">{fileName}</span>
+                    {/* Upload Section */}
+                    <div className="glass-card p-6 animate-slide-up stagger-1">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#007AFF]/20 to-[#5AC8FA]/20 flex items-center justify-center border border-[#007AFF]/20">
+                                <Upload className="w-5 h-5 text-[#007AFF]" />
+                            </div>
+                            <h2 className="text-lg font-semibold text-white">Envoyer vers le PC</h2>
+                        </div>
+
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            onChange={handleFileSelect}
+                            className="hidden"
+                            id="file-input"
+                        />
+
+                        <label
+                            htmlFor="file-input"
+                            className="block w-full py-10 border-2 border-dashed border-white/15 hover:border-[#007AFF]/50 rounded-2xl cursor-pointer transition-all duration-300 text-center group hover:bg-white/5"
+                        >
+                            <div className="w-14 h-14 mx-auto mb-3 rounded-xl bg-gradient-to-br from-white/5 to-white/10 flex items-center justify-center group-hover:from-[#007AFF]/20 group-hover:to-[#5AC8FA]/20 transition-all duration-300">
+                                <Upload className="w-7 h-7 text-white/30 group-hover:text-[#007AFF] transition-colors" />
+                            </div>
+                            <p className="text-white/50 font-medium group-hover:text-white/70 transition-colors">
+                                Toucher pour sélectionner
+                            </p>
+                            <p className="text-white/30 text-sm mt-1">Photos, vidéos, documents...</p>
+                        </label>
+                    </div>
+
+                    {/* Transfer Progress */}
+                    {currentTransfer && (
+                        <div className="glass-card p-5 border-[#007AFF]/30 animate-scale-in">
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#007AFF]/20 to-[#5AC8FA]/20 flex items-center justify-center border border-[#007AFF]/20 animate-pulse-soft">
+                                    <Zap className="w-5 h-5 text-[#007AFF]" />
                                 </div>
-                            ))}
+                                <span className="font-semibold text-white">
+                                    {currentTransfer.direction === 'upload' ? 'Envoi en cours...' : 'Téléchargement...'}
+                                </span>
+                            </div>
+                            <p className="text-sm text-white/50 truncate mb-3">{currentTransfer.fileName}</p>
+                            <div className="progress-bar">
+                                <div
+                                    className="progress-bar-fill"
+                                    style={{ width: `${currentTransfer.percent}%` }}
+                                />
+                            </div>
+                            <p className="text-right text-sm text-[#007AFF] font-semibold mt-2">{currentTransfer.percent}%</p>
                         </div>
-                    </div>
-                )}
+                    )}
 
-                {/* Available Files from PC */}
-                {availableFiles.length > 0 && (
-                    <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-6 border border-white/10">
-                        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                            <Download className="w-5 h-5 text-purple-400" />
-                            Fichiers disponibles
-                        </h2>
-
-                        <div className="space-y-2">
-                            {availableFiles.map(file => (
-                                <button
-                                    key={file.id}
-                                    onClick={() => requestFile(file.id)}
-                                    className="w-full flex items-center gap-3 p-3 bg-white/5 hover:bg-white/10 rounded-lg transition-colors"
-                                >
-                                    <FileIcon className="w-5 h-5 text-purple-400" />
-                                    <span className="flex-1 text-left truncate">{file.name}</span>
-                                    <Download className="w-4 h-4 text-white/50" />
-                                </button>
-                            ))}
+                    {/* Completed Transfers */}
+                    {completedTransfers.length > 0 && (
+                        <div className="glass-card p-5 animate-slide-up stagger-2">
+                            <h3 className="text-sm font-semibold text-white/50 mb-3">Transferts terminés</h3>
+                            <div className="space-y-2">
+                                {completedTransfers.slice(-5).map((fileName, index) => (
+                                    <div key={index} className="flex items-center gap-3 p-3 rounded-xl bg-[#34C759]/10 border border-[#34C759]/20">
+                                        <CheckCircle className="w-5 h-5 text-[#34C759]" />
+                                        <span className="text-sm text-white truncate flex-1">{fileName}</span>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
-                    </div>
-                )}
-            </main>
+                    )}
+
+                    {/* Available Files from PC */}
+                    {availableFiles.length > 0 && (
+                        <div className="glass-card p-6 animate-slide-up stagger-3">
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#AF52DE]/20 to-[#FF2D55]/20 flex items-center justify-center border border-[#AF52DE]/20">
+                                    <Download className="w-5 h-5 text-[#AF52DE]" />
+                                </div>
+                                <h2 className="text-lg font-semibold text-white">Fichiers disponibles</h2>
+                            </div>
+
+                            <div className="space-y-2">
+                                {availableFiles.map(file => (
+                                    <button
+                                        key={file.id}
+                                        onClick={() => requestFile(file.id)}
+                                        className="file-item w-full"
+                                    >
+                                        <div className="file-icon">
+                                            <FileIcon className="w-5 h-5 text-[#AF52DE]" />
+                                        </div>
+                                        <span className="flex-1 text-left text-white truncate">{file.name}</span>
+                                        <ArrowUpRight className="w-5 h-5 text-white/30" />
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </main>
+            </div>
         </div>
     );
 }
