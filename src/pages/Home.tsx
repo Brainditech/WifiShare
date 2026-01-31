@@ -1,12 +1,13 @@
 // ============================================================================
-// WiFiShare - Page Home (Version PeerJS)
-// Interface unifiée pour envoyer ET recevoir
+// WiFiShare - Page Home (Version améliorée)
+// Interface unifiée avec connexion persistante et scanner QR
 // ============================================================================
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, Download, Wifi, Copy, Check, FileText, Upload, ArrowLeft } from 'lucide-react';
+import { Send, Download, Wifi, Copy, Check, FileText, Upload, ArrowLeft, Camera, RefreshCw } from 'lucide-react';
 import { QRCodeDisplay } from '../components/QRCodeDisplay';
 import { FileDropZone } from '../components/FileDropZone';
+import { QRScanner } from '../components/QRScanner';
 import { peerService } from '../services/peerService';
 
 type Mode = 'menu' | 'receive' | 'send-connect' | 'send-files' | 'transferring' | 'complete';
@@ -14,7 +15,6 @@ type Mode = 'menu' | 'receive' | 'send-connect' | 'send-files' | 'transferring' 
 interface ReceivedFile {
     name: string;
     size: number;
-    blob: Blob;
 }
 
 export function Home() {
@@ -25,12 +25,13 @@ export function Home() {
     const [error, setError] = useState<string>('');
     const [isConnected, setIsConnected] = useState(false);
     const [isConnecting, setIsConnecting] = useState(false);
+    const [showScanner, setShowScanner] = useState(false);
 
     // Files
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [incomingFiles, setIncomingFiles] = useState<{ name: string; size: number }[]>([]);
     const [receivedFiles, setReceivedFiles] = useState<ReceivedFile[]>([]);
-    const [currentFileIndex, setCurrentFileIndex] = useState(0);
+    const [sentFilesCount, setSentFilesCount] = useState(0);
     const [progress, setProgress] = useState(0);
 
     const filesRef = useRef<File[]>([]);
@@ -45,7 +46,6 @@ export function Home() {
             setIsConnecting(true);
             setError('');
 
-            // Set up callbacks before initializing
             peerService.setOnConnected(() => {
                 console.log('✅ Peer connected!');
                 setIsConnected(true);
@@ -63,20 +63,19 @@ export function Home() {
                 setMode('transferring');
             });
 
-            peerService.setOnFileStart((fileIdx, fileName, _fileSize) => {
+            peerService.setOnFileStart((fileIdx, fileName) => {
                 console.log(`📄 Receiving file ${fileIdx}: ${fileName}`);
-                setCurrentFileIndex(fileIdx);
             });
 
-            peerService.setOnProgress((_fileIndex, fileProgress) => {
+            peerService.setOnProgress((_fileIdx, fileProgress) => {
                 setProgress(fileProgress);
             });
 
-            peerService.setOnFileComplete((fileIndex, fileName, blob) => {
+            peerService.setOnFileComplete((_fileIdx, fileName, blob) => {
                 console.log(`✅ File complete: ${fileName}`);
-                setReceivedFiles(prev => [...prev, { name: fileName, size: blob.size, blob }]);
+                setReceivedFiles(prev => [...prev, { name: fileName, size: blob.size }]);
 
-                // Auto-download the file
+                // Auto-download
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
@@ -112,13 +111,16 @@ export function Home() {
     // Start receiving mode
     const startReceiving = async () => {
         setMode('receive');
+        setReceivedFiles([]);
         await initializePeer();
     };
 
     // Start sending mode
-    const startSending = async () => {
+    const startSending = () => {
         setMode('send-connect');
         setError('');
+        setSelectedFiles([]);
+        setSentFilesCount(0);
     };
 
     // Connect to receiver
@@ -140,6 +142,31 @@ export function Home() {
         }
     };
 
+    // Handle QR scan result
+    const handleQRScan = (code: string) => {
+        setShowScanner(false);
+        setInputCode(code);
+        // Auto-connect after scan
+        setTimeout(() => {
+            const input = document.querySelector('input[type="text"]') as HTMLInputElement;
+            if (input) input.value = code;
+            connectToReceiverWithCode(code);
+        }, 100);
+    };
+
+    const connectToReceiverWithCode = async (code: string) => {
+        try {
+            setIsConnecting(true);
+            setError('');
+            await initializePeer();
+            await peerService.connectTo(code.toUpperCase());
+            setMode('send-files');
+        } catch (err) {
+            setError('Impossible de se connecter. Vérifiez le code.');
+            setIsConnecting(false);
+        }
+    };
+
     // Send selected files
     const sendFiles = async () => {
         if (filesRef.current.length === 0) return;
@@ -148,18 +175,31 @@ export function Home() {
         setProgress(0);
 
         try {
-            await peerService.sendFiles(filesRef.current, (fileIndex, fileProgress) => {
-                setCurrentFileIndex(fileIndex);
-                // Calculate overall progress
-                const totalFiles = filesRef.current.length;
-                const overall = ((fileIndex / totalFiles) + (fileProgress / 100 / totalFiles)) * 100;
-                setProgress(overall);
+            const filesToSend = [...filesRef.current];
+            await peerService.sendFiles(filesToSend, (_fileIndex, fileProgress) => {
+                setProgress(fileProgress);
             });
+            setSentFilesCount(filesToSend.length);
             setMode('complete');
         } catch (err) {
             setError('Erreur pendant le transfert');
             setMode('send-files');
         }
+    };
+
+    // Send more files (stay connected)
+    const sendMoreFiles = () => {
+        setSelectedFiles([]);
+        setProgress(0);
+        setMode('send-files');
+    };
+
+    // Stay ready for more files (receiver)
+    const receiveMoreFiles = () => {
+        setReceivedFiles([]);
+        setIncomingFiles([]);
+        setProgress(0);
+        setMode('receive');
     };
 
     const copyCode = async () => {
@@ -179,6 +219,7 @@ export function Home() {
         setIncomingFiles([]);
         setReceivedFiles([]);
         setProgress(0);
+        setSentFilesCount(0);
     };
 
     const formatSize = (bytes: number): string => {
@@ -191,6 +232,14 @@ export function Home() {
 
     return (
         <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-950 safe-area-top safe-area-bottom">
+            {/* QR Scanner Modal */}
+            {showScanner && (
+                <QRScanner
+                    onScan={handleQRScan}
+                    onClose={() => setShowScanner(false)}
+                />
+            )}
+
             {/* Header */}
             <header className="px-6 pt-8 pb-6">
                 <div className="flex items-center justify-center gap-3 mb-2">
@@ -208,18 +257,12 @@ export function Home() {
                 {/* Menu */}
                 {mode === 'menu' && (
                     <div className="space-y-4 animate-slide-up">
-                        <button
-                            onClick={startSending}
-                            className="w-full btn btn-primary py-6 text-lg"
-                        >
+                        <button onClick={startSending} className="w-full btn btn-primary py-6 text-lg">
                             <Send className="w-6 h-6" />
                             Envoyer des fichiers
                         </button>
 
-                        <button
-                            onClick={startReceiving}
-                            className="w-full btn btn-secondary py-6 text-lg"
-                        >
+                        <button onClick={startReceiving} className="w-full btn btn-secondary py-6 text-lg">
                             <Download className="w-6 h-6" />
                             Recevoir des fichiers
                         </button>
@@ -289,9 +332,28 @@ export function Home() {
                         </button>
 
                         <div className="card p-6">
-                            <h2 className="text-lg font-semibold text-white mb-4">Entrez le code</h2>
+                            <h2 className="text-lg font-semibold text-white mb-4">Connectez-vous</h2>
+
+                            {/* Scanner button */}
+                            <button
+                                onClick={() => setShowScanner(true)}
+                                className="w-full btn btn-secondary py-4 mb-4"
+                            >
+                                <Camera className="w-5 h-5" />
+                                Scanner le QR code
+                            </button>
+
+                            <div className="relative my-4">
+                                <div className="absolute inset-0 flex items-center">
+                                    <div className="w-full border-t border-slate-700"></div>
+                                </div>
+                                <div className="relative flex justify-center">
+                                    <span className="bg-slate-800 px-3 text-slate-400 text-sm">ou</span>
+                                </div>
+                            </div>
+
                             <p className="text-slate-400 text-sm mb-4">
-                                Demandez le code affiché sur l'appareil récepteur
+                                Entrez le code affiché sur l'autre appareil
                             </p>
 
                             <input
@@ -386,12 +448,14 @@ export function Home() {
                                 </div>
                             </div>
 
-                            {(selectedFiles.length > 0 || incomingFiles.length > 0) && (
-                                <div className="flex items-center gap-3 p-3 bg-slate-800/50 rounded-lg">
-                                    <FileText className="w-5 h-5 text-sky-400" />
-                                    <span className="text-white text-sm">
-                                        {selectedFiles[currentFileIndex]?.name || incomingFiles[currentFileIndex]?.name || 'Fichier...'}
-                                    </span>
+                            {incomingFiles.length > 0 && (
+                                <div className="space-y-2">
+                                    {incomingFiles.map((file, i) => (
+                                        <div key={i} className="flex items-center gap-3 p-3 bg-slate-800/50 rounded-lg">
+                                            <FileText className="w-5 h-5 text-sky-400" />
+                                            <span className="text-white text-sm truncate">{file.name}</span>
+                                        </div>
+                                    ))}
                                 </div>
                             )}
                         </div>
@@ -407,8 +471,8 @@ export function Home() {
                             </div>
                             <h2 className="text-xl font-bold text-white mb-2">Transfert terminé !</h2>
                             <p className="text-slate-400 mb-6">
-                                {selectedFiles.length > 0
-                                    ? `${selectedFiles.length} fichier(s) envoyé(s)`
+                                {sentFilesCount > 0
+                                    ? `${sentFilesCount} fichier(s) envoyé(s)`
                                     : `${receivedFiles.length} fichier(s) reçu(s)`
                                 }
                             </p>
@@ -427,9 +491,24 @@ export function Home() {
                                 </div>
                             )}
 
-                            <button onClick={goBack} className="btn btn-primary">
-                                Nouveau transfert
-                            </button>
+                            {/* Stay connected buttons */}
+                            <div className="space-y-3">
+                                {sentFilesCount > 0 ? (
+                                    <button onClick={sendMoreFiles} className="w-full btn btn-primary">
+                                        <RefreshCw className="w-5 h-5" />
+                                        Envoyer d'autres fichiers
+                                    </button>
+                                ) : (
+                                    <button onClick={receiveMoreFiles} className="w-full btn btn-primary">
+                                        <RefreshCw className="w-5 h-5" />
+                                        Recevoir d'autres fichiers
+                                    </button>
+                                )}
+
+                                <button onClick={goBack} className="w-full btn btn-ghost">
+                                    Terminé
+                                </button>
+                            </div>
                         </div>
                     </div>
                 )}
