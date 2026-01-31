@@ -1,12 +1,14 @@
 // ============================================================================
 // WiFiShare - Composant FileDropZone
-// Zone de dépôt de fichiers avec validation
+// Zone de dépôt de fichiers simplifiée
 // ============================================================================
 
 import { memo, useState, useCallback, useRef } from 'react';
-import { Upload, File, X, AlertCircle } from 'lucide-react';
-import { fileTransferService } from '../services/fileTransferService';
-import { FILE_VALIDATION_CONFIG } from '../config';
+import { Upload, File as FileIcon, X, AlertCircle } from 'lucide-react';
+
+// Configuration de validation locale
+const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500 MB
+const MAX_FILE_SIZE_LABEL = '500 MB';
 
 interface FileDropZoneProps {
     onFilesSelected: (files: File[]) => void;
@@ -24,6 +26,13 @@ export const FileDropZone = memo(function FileDropZone({
     const [errors, setErrors] = useState<string[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    const validateFile = (file: File): { valid: boolean; error?: string } => {
+        if (file.size > MAX_FILE_SIZE) {
+            return { valid: false, error: `Fichier trop volumineux (max ${MAX_FILE_SIZE_LABEL})` };
+        }
+        return { valid: true };
+    };
+
     const validateAndAddFiles = useCallback((files: FileList | null) => {
         if (!files) return;
 
@@ -38,11 +47,11 @@ export const FileDropZone = memo(function FileDropZone({
         }
 
         for (const file of filesArray.slice(0, remainingSlots)) {
-            const validation = fileTransferService.validateFile(file);
-            if (validation.success) {
+            const validation = validateFile(file);
+            if (validation.valid) {
                 newFiles.push(file);
             } else {
-                newErrors.push(`${file.name}: ${validation.error.message}`);
+                newErrors.push(`${file.name}: ${validation.error}`);
             }
         }
 
@@ -110,14 +119,14 @@ export const FileDropZone = memo(function FileDropZone({
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
                 className={`
-          relative border-2 border-dashed rounded-2xl p-8
-          flex flex-col items-center justify-center gap-4
-          cursor-pointer transition-all duration-300
-          ${isDragging
-                        ? 'border-primary-500 bg-primary-500/10'
+                    relative border-2 border-dashed rounded-2xl p-8
+                    flex flex-col items-center justify-center gap-4
+                    cursor-pointer transition-all duration-300
+                    ${isDragging
+                        ? 'border-sky-500 bg-sky-500/10'
                         : 'border-slate-600 hover:border-slate-500 hover:bg-slate-800/30'
                     }
-        `}
+                `}
             >
                 <input
                     ref={fileInputRef}
@@ -128,14 +137,14 @@ export const FileDropZone = memo(function FileDropZone({
                 />
 
                 <div className={`
-          w-16 h-16 rounded-full flex items-center justify-center
-          transition-all duration-300
-          ${isDragging ? 'bg-primary-500/20' : 'bg-slate-700'}
-        `}>
+                    w-16 h-16 rounded-full flex items-center justify-center
+                    transition-all duration-300
+                    ${isDragging ? 'bg-sky-500/20' : 'bg-slate-700'}
+                `}>
                     <Upload className={`
-            w-8 h-8 transition-colors duration-300
-            ${isDragging ? 'text-primary-400' : 'text-slate-400'}
-          `} />
+                        w-8 h-8 transition-colors duration-300
+                        ${isDragging ? 'text-sky-400' : 'text-slate-400'}
+                    `} />
                 </div>
 
                 <div className="text-center">
@@ -146,7 +155,7 @@ export const FileDropZone = memo(function FileDropZone({
                         ou cliquez pour sélectionner
                     </p>
                     <p className="text-xs text-slate-500 mt-2">
-                        Max {formatSize(FILE_VALIDATION_CONFIG.maxSizeBytes)} par fichier
+                        Max {MAX_FILE_SIZE_LABEL} par fichier
                     </p>
                 </div>
             </div>
@@ -177,7 +186,7 @@ export const FileDropZone = memo(function FileDropZone({
                                 key={`${file.name}-${index}`}
                                 className="flex items-center gap-3 p-3 bg-slate-800/50 rounded-xl"
                             >
-                                <File className="w-5 h-5 text-slate-400 flex-shrink-0" />
+                                <FileIcon className="w-5 h-5 text-slate-400 flex-shrink-0" />
                                 <div className="flex-1 min-w-0">
                                     <p className="text-sm text-white truncate">{file.name}</p>
                                     <p className="text-xs text-slate-500">{formatSize(file.size)}</p>
