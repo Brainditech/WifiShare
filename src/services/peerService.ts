@@ -1,10 +1,10 @@
 // ============================================================================
-// WiFiShare - Service PeerJS
-// Connexion P2P fiable avec PeerJS
+// WiFiShare - Service PeerJS (Version avec synchronisation)
+// Connexion P2P fiable avec PeerJS + ACK
 // ============================================================================
 
 import Peer from 'peerjs';
-import type { DataConnection } from 'peerjs';
+import type { DataConnection, PeerError } from 'peerjs';
 
 // Types pour les messages
 interface FileInfo {
@@ -46,7 +46,12 @@ interface TransferEnd {
     totalFiles: number;
 }
 
-type PeerMessage = FileChunk | FileStart | FileEnd | TransferStart | TransferEnd;
+// ACK messages for synchronization
+interface TransferAck {
+    type: 'transfer-ack';
+}
+
+type PeerMessage = FileChunk | FileStart | FileEnd | TransferStart | TransferEnd | TransferAck;
 
 // Callbacks
 type OnConnectedCallback = () => void;
@@ -58,7 +63,7 @@ type OnFileCompleteCallback = (fileIndex: number, fileName: string, blob: Blob) 
 type OnTransferCompleteCallback = () => void;
 type OnErrorCallback = (error: string) => void;
 
-const CHUNK_SIZE = 16 * 1024; // 16KB chunks - smaller for reliability
+const CHUNK_SIZE = 16 * 1024; // 16KB chunks
 
 class PeerService {
     private peer: Peer | null = null;
@@ -84,6 +89,9 @@ class PeerService {
         receivedChunks: number;
     }> = new Map();
 
+    // For synchronization
+    private transferAckResolver: (() => void) | null = null;
+
     // Generate a short 6-character ID
     private generateShortId(): string {
         const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -96,12 +104,16 @@ class PeerService {
 
     // Initialize peer and wait for connection to PeerJS server
     async initialize(): Promise<string> {
+        // If already initialized, return existing ID
+        if (this.peer && this.myPeerId) {
+            return this.myPeerId;
+        }
+
         return new Promise((resolve, reject) => {
             const peerId = this.generateShortId();
 
-            // Use the free PeerJS cloud server
             this.peer = new Peer(peerId, {
-                debug: 2, // Show warnings
+                debug: 1,
             });
 
             this.peer.on('open', (id) => {
@@ -110,10 +122,9 @@ class PeerService {
                 resolve(id);
             });
 
-            this.peer.on('error', (err) => {
+            this.peer.on('error', (err: PeerError<string>) => {
                 console.error('❌ PeerJS error:', err);
                 if (err.type === 'unavailable-id') {
-                    // ID already taken, try again with a new one
                     this.destroy();
                     this.initialize().then(resolve).catch(reject);
                 } else {
@@ -124,22 +135,19 @@ class PeerService {
 
             this.peer.on('disconnected', () => {
                 console.log('🔌 Disconnected from PeerJS server');
-                // Try to reconnect
                 this.peer?.reconnect();
             });
 
-            // Handle incoming connections (for receiver)
             this.peer.on('connection', (conn) => {
                 console.log('📲 Incoming connection from:', conn.peer);
                 this.setupConnection(conn);
             });
 
-            // Timeout after 10 seconds
             setTimeout(() => {
                 if (!this.myPeerId) {
                     reject(new Error('Timeout connecting to PeerJS server'));
                 }
-            }, 10000);
+            }, 15000);
         });
     }
 
@@ -164,17 +172,16 @@ class PeerService {
                 resolve();
             });
 
-            conn.on('error', (err) => {
+            conn.on('error', (err: Error) => {
                 console.error('❌ Connection error:', err);
                 reject(err);
             });
 
-            // Timeout
             setTimeout(() => {
                 if (!this.connection) {
                     reject(new Error('Timeout connecting to peer'));
                 }
-            }, 10000);
+            }, 15000);
         });
     }
 
@@ -196,12 +203,11 @@ class PeerService {
             this.onDisconnected?.();
         });
 
-        conn.on('error', (err) => {
+        conn.on('error', (err: Error) => {
             console.error('❌ Connection error:', err);
             this.onError?.(err.message || 'Erreur de connexion');
         });
 
-        // If connection is already open, fire callback
         if (conn.open) {
             this.onConnected?.();
         }
@@ -242,7 +248,6 @@ class PeerService {
                 console.log('✅ File complete:', message.fileName);
                 const file = this.receivingFiles.get(message.fileIndex);
                 if (file) {
-                    // Combine chunks into a blob
                     const blob = new Blob(file.chunks, { type: file.fileType });
                     this.onFileComplete?.(message.fileIndex, message.fileName, blob);
                 }
@@ -250,7 +255,20 @@ class PeerService {
 
             case 'transfer-end':
                 console.log('🎉 Transfer complete:', message.totalFiles, 'files');
+                // Send ACK to confirm reception is complete
+                if (this.connection?.open) {
+                    this.connection.send({ type: 'transfer-ack' } as TransferAck);
+                }
                 this.onTransferComplete?.();
+                break;
+
+            case 'transfer-ack':
+                console.log('✅ Transfer ACK received');
+                // Resolve the promise waiting for ACK
+                if (this.transferAckResolver) {
+                    this.transferAckResolver();
+                    this.transferAckResolver = null;
+                }
                 break;
         }
     }
@@ -277,7 +295,6 @@ class PeerService {
             const bytes = new Uint8Array(buffer);
             const totalChunks = Math.ceil(bytes.length / CHUNK_SIZE);
 
-            // Announce file start
             this.connection.send({
                 type: 'file-start',
                 fileIndex,
@@ -287,7 +304,7 @@ class PeerService {
                 totalChunks
             } as FileStart);
 
-            // Send chunks
+            // Send chunks with flow control
             for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
                 const start = chunkIndex * CHUNK_SIZE;
                 const end = Math.min(start + CHUNK_SIZE, bytes.length);
@@ -301,29 +318,43 @@ class PeerService {
                     data: chunk
                 } as FileChunk);
 
-                // Update progress
                 const progress = ((chunkIndex + 1) / totalChunks) * 100;
                 onProgress(fileIndex, progress);
 
-                // Small delay to not overwhelm the connection
-                if (chunkIndex % 10 === 0) {
-                    await new Promise(r => setTimeout(r, 1));
+                // Add delay every 5 chunks for flow control
+                if ((chunkIndex + 1) % 5 === 0) {
+                    await new Promise(r => setTimeout(r, 5));
                 }
             }
 
-            // Announce file end
             this.connection.send({
                 type: 'file-end',
                 fileIndex,
                 fileName: file.name
             } as FileEnd);
+
+            // Small delay between files
+            await new Promise(r => setTimeout(r, 50));
         }
 
-        // Announce transfer complete
+        // Send transfer complete and wait for ACK
         this.connection.send({
             type: 'transfer-end',
             totalFiles: files.length
         } as TransferEnd);
+
+        // Wait for ACK with timeout
+        const ackPromise = new Promise<void>((resolve) => {
+            this.transferAckResolver = resolve;
+        });
+
+        const timeoutPromise = new Promise<void>((resolve) => {
+            setTimeout(resolve, 5000); // 5 second timeout
+        });
+
+        // Wait for either ACK or timeout
+        await Promise.race([ackPromise, timeoutPromise]);
+        console.log('📤 Send complete (ACK received or timeout)');
     }
 
     // Set callbacks
@@ -336,17 +367,20 @@ class PeerService {
     setOnTransferComplete(cb: OnTransferCompleteCallback) { this.onTransferComplete = cb; }
     setOnError(cb: OnErrorCallback) { this.onError = cb; }
 
-    // Get current peer ID
     getPeerId(): string {
         return this.myPeerId;
     }
 
-    // Check if connected
     isConnected(): boolean {
         return this.connection !== null && this.connection.open;
     }
 
-    // Destroy the peer
+    // Keep connection alive but reset transfer state
+    resetTransferState() {
+        this.receivingFiles.clear();
+        this.transferAckResolver = null;
+    }
+
     destroy() {
         this.connection?.close();
         this.peer?.destroy();
@@ -354,8 +388,8 @@ class PeerService {
         this.connection = null;
         this.myPeerId = '';
         this.receivingFiles.clear();
+        this.transferAckResolver = null;
     }
 }
 
-// Singleton
 export const peerService = new PeerService();

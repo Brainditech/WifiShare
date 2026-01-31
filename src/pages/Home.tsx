@@ -142,26 +142,24 @@ export function Home() {
         }
     };
 
-    // Handle QR scan result
-    const handleQRScan = (code: string) => {
+    // Handle QR scan result - connect directly
+    const handleQRScan = async (code: string) => {
+        console.log('📱 QR Scanned, connecting to:', code);
         setShowScanner(false);
         setInputCode(code);
-        // Auto-connect after scan
-        setTimeout(() => {
-            const input = document.querySelector('input[type="text"]') as HTMLInputElement;
-            if (input) input.value = code;
-            connectToReceiverWithCode(code);
-        }, 100);
-    };
 
-    const connectToReceiverWithCode = async (code: string) => {
+        // Connect directly
         try {
             setIsConnecting(true);
             setError('');
             await initializePeer();
+            console.log('✅ Peer initialized, connecting to receiver...');
             await peerService.connectTo(code.toUpperCase());
+            console.log('✅ Connected! Switching to send-files mode');
+            setIsConnecting(false);
             setMode('send-files');
         } catch (err) {
+            console.error('❌ Connection failed:', err);
             setError('Impossible de se connecter. Vérifiez le code.');
             setIsConnecting(false);
         }
