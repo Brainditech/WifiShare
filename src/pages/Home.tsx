@@ -136,7 +136,7 @@ export function Home() {
             await initializePeer();
             await peerService.connectTo(inputCode.toUpperCase());
             setMode('send-files');
-        } catch (err) {
+        } catch {
             setError('Impossible de se connecter. Vérifiez le code.');
             setIsConnecting(false);
         }
@@ -179,7 +179,7 @@ export function Home() {
             });
             setSentFilesCount(filesToSend.length);
             setMode('complete');
-        } catch (err) {
+        } catch {
             setError('Erreur pendant le transfert');
             setMode('send-files');
         }

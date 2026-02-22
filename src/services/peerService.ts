@@ -233,7 +233,7 @@ class PeerService {
                 this.onFileStart?.(message.fileIndex, message.fileName, message.fileSize);
                 break;
 
-            case 'chunk':
+            case 'chunk': {
                 const fileState = this.receivingFiles.get(message.fileIndex);
                 if (fileState) {
                     fileState.chunks[message.chunkIndex] = message.data;
@@ -243,8 +243,9 @@ class PeerService {
                     this.onProgress?.(message.fileIndex, progress);
                 }
                 break;
+            }
 
-            case 'file-end':
+            case 'file-end': {
                 console.log('✅ File complete:', message.fileName);
                 const file = this.receivingFiles.get(message.fileIndex);
                 if (file) {
@@ -252,6 +253,7 @@ class PeerService {
                     this.onFileComplete?.(message.fileIndex, message.fileName, blob);
                 }
                 break;
+            }
 
             case 'transfer-end':
                 console.log('🎉 Transfer complete:', message.totalFiles, 'files');

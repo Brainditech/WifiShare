@@ -13,16 +13,12 @@ interface DeviceCardProps {
     onClick: () => void;
 }
 
-const getDeviceIcon = (type: DeviceType) => {
+const getDeviceIcon = (type: DeviceType, className: string) => {
     switch (type) {
-        case DeviceType.MOBILE:
-            return Smartphone;
-        case DeviceType.DESKTOP:
-            return Monitor;
-        case DeviceType.TABLET:
-            return Tablet;
-        default:
-            return HelpCircle;
+        case DeviceType.MOBILE: return <Smartphone className={className} />;
+        case DeviceType.DESKTOP: return <Monitor className={className} />;
+        case DeviceType.TABLET: return <Tablet className={className} />;
+        default: return <HelpCircle className={className} />;
     }
 };
 
@@ -44,7 +40,7 @@ export const DeviceCard = memo(function DeviceCard({
     isSelected,
     onClick
 }: DeviceCardProps) {
-    const Icon = getDeviceIcon(device.type);
+
     const typeName = getDeviceTypeName(device.type);
 
     return (
@@ -69,7 +65,7 @@ export const DeviceCard = memo(function DeviceCard({
                     : 'bg-slate-700'
                 }
       `}>
-                <Icon className="w-7 h-7 text-white" />
+                {getDeviceIcon(device.type, "w-7 h-7 text-white")}
             </div>
 
             {/* Device Info */}

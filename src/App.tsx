@@ -1,51 +1,30 @@
 // ============================================================================
-// WiFiShare Desktop - Application principale
+// WiFiShare Desktop - Application principale (Design Aether)
 // Supporte mode Desktop (Electron) et mode Web Client (navigateur)
 // ============================================================================
 
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { useEffect, useState } from 'react';
-import { DesktopHome } from './pages/DesktopHome';
-import { WebClient } from './pages/WebClient';
-import './index.css';
+
+import { DesktopHomeAether } from './pages/DesktopHomeAether';
+import { WebClientAether } from './pages/WebClientAether';
+import './styles/aether-design-system.css';
 
 // Detect if running in Electron
 const isElectron = (): boolean => {
-  const userAgent = navigator.userAgent.toLowerCase();
-  return userAgent.indexOf(' electron/') > -1 ||
-    (typeof window !== 'undefined' && typeof window.electronAPI !== 'undefined');
+  return typeof window !== 'undefined' &&
+    typeof window.electronAPI !== 'undefined';
 };
 
 function AppRoutes() {
-  const [mode, setMode] = useState<'desktop' | 'web' | 'loading'>('loading');
-
-  useEffect(() => {
-    // Check for query param override
-    const params = new URLSearchParams(window.location.search);
-    const modeParam = params.get('mode');
-
-    if (modeParam === 'desktop' || isElectron()) {
-      setMode('desktop');
-    } else {
-      setMode('web');
-    }
-  }, []);
-
-  if (mode === 'loading') {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-purple-500 border-t-transparent"></div>
-      </div>
-    );
-  }
+  const mode = isElectron() ? 'desktop' : 'web';
 
   return (
     <Routes>
       {/* Desktop mode - shows QR code, Web mode - shows client interface */}
-      <Route path="/" element={mode === 'desktop' ? <DesktopHome /> : <WebClient />} />
+      <Route path="/" element={mode === 'desktop' ? <DesktopHomeAether /> : <WebClientAether />} />
 
       {/* Fallback - all routes go to same component */}
-      <Route path="*" element={mode === 'desktop' ? <DesktopHome /> : <WebClient />} />
+      <Route path="*" element={mode === 'desktop' ? <DesktopHomeAether /> : <WebClientAether />} />
     </Routes>
   );
 }

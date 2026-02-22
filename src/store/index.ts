@@ -138,6 +138,7 @@ export const useAppStore = create<AppStore>()(
             // Transfer Actions
             // --------------------------------------------------------------------------
 
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             startTransfer: async (files: File[], _targetDevice: Device): Promise<Result<TransferId, TransferError>> => {
                 // This is a placeholder - actual implementation will use services
                 const transferId = crypto.randomUUID() as TransferId;

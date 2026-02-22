@@ -11,7 +11,7 @@ import { setupWebSocket } from './websocket';
 let server: Server | null = null;
 let wss: WebSocketServer | null = null;
 
-let serverInfo = {
+const serverInfo = {
     ip: '',
     port: 3847,
     sessionCode: '',

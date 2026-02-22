@@ -1,0 +1,36 @@
+
+C:\Users\Zeltys\Documents\FileTransfert\wifishare\src\components\DeviceCard.tsx
+  72:18  error  Error: Cannot create components during render
+
+Components created during render will reset their state each time they are created. Declare components outside of render.
+
+C:\Users\Zeltys\Documents\FileTransfert\wifishare\src\components\DeviceCard.tsx:72:18
+  70 |                 }
+  71 |       `}>
+> 72 |                 <Icon className="w-7 h-7 text-white" />
+     |                  ^^^^ This component is created during render
+  73 |             </div>
+  74 |
+  75 |             {/* Device Info */}
+
+C:\Users\Zeltys\Documents\FileTransfert\wifishare\src\components\DeviceCard.tsx:47:18
+  45 |     onClick
+  46 | }: DeviceCardProps) {
+> 47 |     const Icon = getDeviceIcon(device.type);
+     |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^ The component is created during render here
+  48 |     const typeName = getDeviceTypeName(device.type);
+  49 |
+  50 |     return (  react-hooks/static-components
+
+C:\Users\Zeltys\Documents\FileTransfert\wifishare\src\components\QRScanner.tsx
+  27:22  error  '_e' is defined but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\Zeltys\Documents\FileTransfert\wifishare\src\pages\Home.tsx
+  139:18  error  '_err' is defined but never used  @typescript-eslint/no-unused-vars
+  182:18  error  '_err' is defined but never used  @typescript-eslint/no-unused-vars
+
+C:\Users\Zeltys\Documents\FileTransfert\wifishare\src\pages\WebClientAether.tsx
+  66:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+✖ 5 problems (5 errors, 0 warnings)
+

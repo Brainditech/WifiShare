@@ -1,73 +1,61 @@
-# React + TypeScript + Vite
+# WiFiShare 🚀
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+[![Made with React](https://img.shields.io/badge/React-19-blue.svg)](https://react.dev/)
+[![Built with Electron](https://img.shields.io/badge/Electron-33-333.svg)](https://www.electronjs.org/)
+[![Vite](https://img.shields.io/badge/Vite-7-646CFF.svg)](https://vitejs.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6.svg)](https://www.typescriptlang.org/)
 
-Currently, two official plugins are available:
+WiFiShare is a fast, secure, and intuitive desktop application for sharing files locally over your WiFi network. Built with **React**, **Electron**, and **Vite**, it allows seamless device-to-desktop transfer without requiring an active internet connection.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## 🌟 Features
 
-## React Compiler
+- **Blazing Fast Local Transfers**: Uses direct local network connections.
+- **Cross-Platform Access**: The desktop app acts as a server. Any device (iOS, Android, Windows, Mac) with a web browser can connect using a simple QR code.
+- **Modern UI/UX**: Built with a sleek, custom **Aether Design System** using Tailwind CSS.
+- **Secure**: All files stay entirely on your local network.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 🚀 Getting Started
 
-## Expanding the ESLint configuration
+### Prerequisites
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- [Node.js](https://nodejs.org/) (v18 or higher)
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+### Installation & Development
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/your-username/wifishare.git
+   cd wifishare
+   ```
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+
+3. **Start the development server:**
+   ```bash
+   npm run electron:dev
+   ```
+
+### Building for Production
+
+To create a production-ready autonomous executable (Portable EXE on Windows):
+
+```bash
+npm run electron:build
 ```
+The output file will be generated in the `release/` directory.
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## 🛠️ Tech Stack
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+- **Frontend Core**: React 19, TypeScript, Vite
+- **Styling**: TailwindCSS Custom Design System, Lucide React
+- **State Management**: Zustand
+- **Desktop Environment**: Electron
+- **Networking**: Express (Local Web Server), WebSocket (WS), PeerJS (WebRTC)
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+## 👨‍💻 Author
+
+**Zeltys**
+- GitHub: [@Zeltys](https://github.com/Zeltys)
