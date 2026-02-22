@@ -24,7 +24,7 @@ WiFiShare is a fast, secure, and intuitive desktop application for sharing files
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/your-username/wifishare.git
+   git clone https://github.com/Brainditech/WiFiShare.git
    cd wifishare
    ```
 
@@ -57,5 +57,5 @@ The output file will be generated in the `release/` directory.
 
 ## 👨‍💻 Author
 
-**Zeltys**
-- GitHub: [@Zeltys](https://github.com/Zeltys)
+**Brainditech**
+- GitHub: [@Brainditech](https://github.com/Brainditech)
