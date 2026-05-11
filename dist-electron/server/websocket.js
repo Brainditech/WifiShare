@@ -42,9 +42,9 @@ const path = __importStar(require("path"));
 const crypto_1 = require("crypto");
 const electron_1 = require("electron");
 const index_1 = require("./index");
-const isDev = process.env.NODE_ENV === 'development';
+const isDev = process.env.NODE_ENV === 'development' || !electron_1.app.isPackaged;
 const log = (...args) => { if (isDev)
-    console.log(...args); };
+    console.log('[ws]', ...args); };
 const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500 MB
 const MAX_CHUNKS = Math.ceil(MAX_FILE_SIZE / (64 * 1024)); // ~8000
 // Auth rate limiting: max 5 failures per IP per 60 seconds
@@ -111,17 +111,17 @@ async function handleMessage(client, message, validSessionCode) {
         const now = Date.now();
         const attempts = authAttempts.get(ip);
         if (attempts && now - attempts.firstAttempt < AUTH_WINDOW_MS && attempts.count >= MAX_AUTH_ATTEMPTS) {
+            log(`Auth rate-limited for IP ${ip} (${attempts.count} failures)`);
             send(client.ws, { type: 'auth-failed', reason: 'Too many attempts' });
             client.ws.close();
             return;
         }
         if (sessionCode === validSessionCode) {
-            // Clear failed attempts on success
             authAttempts.delete(ip);
             client.authenticated = true;
+            log(`Auth SUCCESS for client ${client.id} (IP ${ip})`);
             send(client.ws, { type: 'auth-success', clientId: client.id });
             (0, index_1.notifyMainWindow)('client-connected', { id: client.id });
-            // Send list of available files for download
             const availableFiles = Array.from(sharedFiles.entries()).map(([id, info]) => ({
                 id,
                 name: info.name,
@@ -129,9 +129,9 @@ async function handleMessage(client, message, validSessionCode) {
             send(client.ws, { type: 'available-files', files: availableFiles });
         }
         else {
-            // Track failed attempt
             const resetTime = attempts && now - attempts.firstAttempt < AUTH_WINDOW_MS ? attempts.firstAttempt : now;
             authAttempts.set(ip, { count: (attempts?.count ?? 0) + 1, firstAttempt: resetTime });
+            log(`Auth FAILED for client ${client.id} (got "${sessionCode}", expected "${validSessionCode}")`);
             send(client.ws, { type: 'auth-failed', reason: 'Invalid session code' });
             client.ws.close();
         }
@@ -283,6 +283,7 @@ function send(ws, data) {
     }
 }
 function sendError(ws, error) {
+    log('Sending error to client:', error);
     send(ws, { type: 'error', message: error });
 }
 function generateClientId() {

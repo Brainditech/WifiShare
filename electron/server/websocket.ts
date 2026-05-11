@@ -5,8 +5,8 @@ import { randomBytes } from 'crypto';
 import { app } from 'electron';
 import { notifyMainWindow } from './index';
 
-const isDev = process.env.NODE_ENV === 'development';
-const log = (...args: unknown[]) => { if (isDev) console.log(...args); };
+const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+const log = (...args: unknown[]) => { if (isDev) console.log('[ws]', ...args); };
 
 const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500 MB
 const MAX_CHUNKS = Math.ceil(MAX_FILE_SIZE / (64 * 1024)); // ~8000
@@ -112,28 +112,28 @@ async function handleMessage(client: Client, message: Message, validSessionCode:
         const attempts = authAttempts.get(ip);
 
         if (attempts && now - attempts.firstAttempt < AUTH_WINDOW_MS && attempts.count >= MAX_AUTH_ATTEMPTS) {
+            log(`Auth rate-limited for IP ${ip} (${attempts.count} failures)`);
             send(client.ws, { type: 'auth-failed', reason: 'Too many attempts' });
             client.ws.close();
             return;
         }
 
         if (sessionCode === validSessionCode) {
-            // Clear failed attempts on success
             authAttempts.delete(ip);
             client.authenticated = true;
+            log(`Auth SUCCESS for client ${client.id} (IP ${ip})`);
             send(client.ws, { type: 'auth-success', clientId: client.id });
             notifyMainWindow('client-connected', { id: client.id });
 
-            // Send list of available files for download
             const availableFiles = Array.from(sharedFiles.entries()).map(([id, info]) => ({
                 id,
                 name: info.name,
             }));
             send(client.ws, { type: 'available-files', files: availableFiles });
         } else {
-            // Track failed attempt
             const resetTime = attempts && now - attempts.firstAttempt < AUTH_WINDOW_MS ? attempts.firstAttempt : now;
             authAttempts.set(ip, { count: (attempts?.count ?? 0) + 1, firstAttempt: resetTime });
+            log(`Auth FAILED for client ${client.id} (got "${sessionCode}", expected "${validSessionCode}")`);
             send(client.ws, { type: 'auth-failed', reason: 'Invalid session code' });
             client.ws.close();
         }
@@ -323,6 +323,7 @@ function send(ws: WebSocket, data: unknown): void {
 }
 
 function sendError(ws: WebSocket, error: string): void {
+    log('Sending error to client:', error);
     send(ws, { type: 'error', message: error });
 }
 

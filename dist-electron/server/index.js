@@ -75,7 +75,7 @@ async function startServer() {
             staticPath = path.join(process.cwd(), 'dist');
         }
     }
-    const isDev = process.env.NODE_ENV === 'development';
+    const isDev = process.env.NODE_ENV === 'development' || !electron_1.app.isPackaged;
     if (isDev) {
         console.log('=== WiFiShare Server ===');
         console.log('IP:', serverInfo.ip);
@@ -140,7 +140,7 @@ async function startServer() {
     // Start listening
     return new Promise((resolve, reject) => {
         server.listen(serverInfo.port, '0.0.0.0', () => {
-            if (process.env.NODE_ENV === 'development') {
+            if (process.env.NODE_ENV === 'development' || !electron_1.app.isPackaged) {
                 console.log('Server running at', serverInfo.url);
             }
             resolve();

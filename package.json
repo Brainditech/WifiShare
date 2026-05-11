@@ -10,8 +10,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
-    "electron:build": "npm run build && electron-builder",
+    "electron:dev": "cross-env NODE_ENV=development concurrently \"vite\" \"wait-on http://localhost:5173 && node scripts/launch-electron.js .\"",
+    "electron:build": "npm run build && cross-env ELECTRON_RUN_AS_NODE= electron-builder",
     "electron:compile": "tsc -p tsconfig.electron.json"
   },
   "overrides": {
@@ -40,6 +40,7 @@
     "@vitejs/plugin-react": "^5.1.1",
     "autoprefixer": "^10.4.24",
     "concurrently": "^9.0.1",
+    "cross-env": "^10.1.0",
     "electron": "^33.4.11",
     "electron-builder": "^26.8.0",
     "eslint": "^9.39.1",
