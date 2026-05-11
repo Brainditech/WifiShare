@@ -60,7 +60,7 @@ const serverInfo = {
 async function startServer() {
     const expressApp = (0, express_1.default)();
     // Get local IP and generate session code
-    serverInfo.ip = (0, network_1.getLocalIP)();
+    serverInfo.ip = await (0, network_1.getLocalIP)();
     serverInfo.sessionCode = (0, session_1.generateSessionCode)();
     // URL simple sans /s/ - le code est en query parameter
     serverInfo.url = `http://${serverInfo.ip}:${serverInfo.port}/?code=${serverInfo.sessionCode}`;
