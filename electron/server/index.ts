@@ -22,7 +22,7 @@ export async function startServer(): Promise<void> {
     const expressApp = express();
 
     // Get local IP and generate session code
-    serverInfo.ip = getLocalIP();
+    serverInfo.ip = await getLocalIP();
     serverInfo.sessionCode = generateSessionCode();
     // URL simple sans /s/ - le code est en query parameter
     serverInfo.url = `http://${serverInfo.ip}:${serverInfo.port}/?code=${serverInfo.sessionCode}`;
