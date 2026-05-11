@@ -14,7 +14,7 @@ import type {
 // ============================================================================
 
 export const FILE_VALIDATION_CONFIG: FileValidationConfig = {
-    maxSizeBytes: 100 * 1024 * 1024, // 100 MB
+    maxSizeBytes: 500 * 1024 * 1024, // 500 MB
     allowedMimeTypes: [
         // Images
         'image/jpeg',

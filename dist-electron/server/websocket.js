@@ -39,18 +39,49 @@ exports.getConnectedClients = getConnectedClients;
 const ws_1 = require("ws");
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const crypto_1 = require("crypto");
 const electron_1 = require("electron");
 const index_1 = require("./index");
+const isDev = process.env.NODE_ENV === 'development';
+const log = (...args) => { if (isDev)
+    console.log(...args); };
+const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500 MB
+const MAX_CHUNKS = Math.ceil(MAX_FILE_SIZE / (64 * 1024)); // ~8000
+// Auth rate limiting: max 5 failures per IP per 60 seconds
+const authAttempts = new Map();
+const MAX_AUTH_ATTEMPTS = 5;
+const AUTH_WINDOW_MS = 60_000;
 const clients = new Map();
 const pendingFiles = new Map();
 // Files shared by the desktop app for download
 const sharedFiles = new Map();
 function setupWebSocket(wss, sessionCode) {
+    // Server-side heartbeat to detect and clean up dead connections
+    const heartbeatInterval = setInterval(() => {
+        wss.clients.forEach(ws => {
+            if (ws.isAlive === false) {
+                ws.terminate();
+                return;
+            }
+            ws.isAlive = false;
+            ws.ping();
+        });
+    }, 30_000);
+    wss.on('close', () => clearInterval(heartbeatInterval));
     wss.on('connection', (ws) => {
+        const extWs = ws;
+        extWs.isAlive = true;
+        ws.on('pong', () => { extWs.isAlive = true; });
         const clientId = generateClientId();
         const client = { ws, id: clientId, authenticated: false };
         clients.set(clientId, client);
-        console.log(`Client connected: ${clientId}`);
+        log(`Client connected: ${clientId}`);
+        // Close unauthenticated connections after 30 seconds
+        const authTimeout = setTimeout(() => {
+            if (!client.authenticated) {
+                ws.close();
+            }
+        }, 30_000);
         ws.on('message', async (data) => {
             try {
                 const message = JSON.parse(data.toString());
@@ -62,9 +93,10 @@ function setupWebSocket(wss, sessionCode) {
             }
         });
         ws.on('close', () => {
+            clearTimeout(authTimeout);
             clients.delete(clientId);
             (0, index_1.notifyMainWindow)('client-disconnected', { id: clientId });
-            console.log(`Client disconnected: ${clientId}`);
+            log(`Client disconnected: ${clientId}`);
         });
         ws.on('error', (err) => {
             console.error(`WebSocket error for client ${clientId}:`, err);
@@ -75,7 +107,17 @@ async function handleMessage(client, message, validSessionCode) {
     const { type, sessionCode, payload } = message;
     // Authentication
     if (type === 'auth') {
+        const ip = client.ws._socket?.remoteAddress ?? 'unknown';
+        const now = Date.now();
+        const attempts = authAttempts.get(ip);
+        if (attempts && now - attempts.firstAttempt < AUTH_WINDOW_MS && attempts.count >= MAX_AUTH_ATTEMPTS) {
+            send(client.ws, { type: 'auth-failed', reason: 'Too many attempts' });
+            client.ws.close();
+            return;
+        }
         if (sessionCode === validSessionCode) {
+            // Clear failed attempts on success
+            authAttempts.delete(ip);
             client.authenticated = true;
             send(client.ws, { type: 'auth-success', clientId: client.id });
             (0, index_1.notifyMainWindow)('client-connected', { id: client.id });
@@ -87,6 +129,9 @@ async function handleMessage(client, message, validSessionCode) {
             send(client.ws, { type: 'available-files', files: availableFiles });
         }
         else {
+            // Track failed attempt
+            const resetTime = attempts && now - attempts.firstAttempt < AUTH_WINDOW_MS ? attempts.firstAttempt : now;
+            authAttempts.set(ip, { count: (attempts?.count ?? 0) + 1, firstAttempt: resetTime });
             send(client.ws, { type: 'auth-failed', reason: 'Invalid session code' });
             client.ws.close();
         }
@@ -110,17 +155,36 @@ async function handleMessage(client, message, validSessionCode) {
         case 'file-request':
             handleFileRequest(client, payload);
             break;
+        case 'file-cancel':
+            handleFileCancel(client, payload);
+            break;
         case 'ping':
             send(client.ws, { type: 'pong' });
             break;
         default:
-            console.log(`Unknown message type: ${type}`);
+            log(`Unknown message type: ${type}`);
     }
 }
 function handleFileStart(client, payload) {
-    const { fileId, fileName, fileSize, totalChunks } = payload;
-    if (!fileId || !fileName || !fileSize || !totalChunks) {
+    const { fileId, fileSize, totalChunks } = payload;
+    if (!fileId || !fileSize || !totalChunks) {
         sendError(client.ws, 'Invalid file-start payload');
+        return;
+    }
+    // Sanitize fileName: extract basename only, strip dangerous characters
+    const rawName = payload.fileName ?? '';
+    const fileName = path.basename(rawName).replace(/[/\\:*?"<>|]/g, '_');
+    if (!fileName || fileName.startsWith('.')) {
+        sendError(client.ws, 'Invalid file name');
+        return;
+    }
+    // Enforce server-side file size and chunk limits
+    if (fileSize > MAX_FILE_SIZE) {
+        sendError(client.ws, `File too large (max ${formatBytes(MAX_FILE_SIZE)})`);
+        return;
+    }
+    if (totalChunks > MAX_CHUNKS || totalChunks < 1) {
+        sendError(client.ws, 'Invalid chunk count');
         return;
     }
     pendingFiles.set(fileId, {
@@ -131,7 +195,7 @@ function handleFileStart(client, payload) {
         totalChunks,
     });
     send(client.ws, { type: 'file-start-ack', fileId });
-    console.log(`Started receiving file: ${fileName} (${formatBytes(fileSize)})`);
+    log(`Started receiving file: ${fileName} (${formatBytes(fileSize)})`);
 }
 function handleFileChunk(client, payload) {
     const { fileId, chunkIndex, data } = payload;
@@ -142,6 +206,11 @@ function handleFileChunk(client, payload) {
     const pending = pendingFiles.get(fileId);
     if (!pending) {
         sendError(client.ws, 'Unknown file ID');
+        return;
+    }
+    // Validate chunk index bounds
+    if (!Number.isInteger(chunkIndex) || chunkIndex < 0 || chunkIndex >= pending.totalChunks) {
+        sendError(client.ws, 'Invalid chunk index');
         return;
     }
     // Decode base64 chunk
@@ -183,7 +252,14 @@ async function handleFileEnd(client, payload) {
     pendingFiles.delete(fileId);
     send(client.ws, { type: 'file-complete', fileId, savedAs: fileName });
     (0, index_1.notifyMainWindow)('file-received', { name: fileName, path: filePath });
-    console.log(`File saved: ${filePath}`);
+    log(`File saved: ${filePath}`);
+}
+function handleFileCancel(client, payload) {
+    const { fileId } = payload;
+    if (fileId && pendingFiles.has(fileId)) {
+        pendingFiles.delete(fileId);
+        log(`Transfer cancelled for file: ${fileId}`);
+    }
 }
 function handleFileRequest(client, payload) {
     const { fileId } = payload;
@@ -210,7 +286,7 @@ function sendError(ws, error) {
     send(ws, { type: 'error', message: error });
 }
 function generateClientId() {
-    return Math.random().toString(36).substring(2, 10);
+    return (0, crypto_1.randomBytes)(6).toString('hex'); // 12-char hex, 48 bits of entropy
 }
 function formatBytes(bytes) {
     if (bytes === 0)

@@ -34,6 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
+const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const server_1 = require("./server");
 const websocket_1 = require("./server/websocket");
@@ -91,6 +92,9 @@ electron_1.ipcMain.handle('get-downloads-path', () => {
     return electron_1.app.getPath('downloads');
 });
 electron_1.ipcMain.handle('open-folder', async (_, folderPath) => {
+    if (!fs.existsSync(folderPath)) {
+        fs.mkdirSync(folderPath, { recursive: true });
+    }
     await electron_1.shell.openPath(folderPath);
 });
 electron_1.ipcMain.handle('select-files', async () => {
