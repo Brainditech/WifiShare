@@ -39,7 +39,7 @@ export async function startServer(): Promise<void> {
         }
     }
 
-    const isDev = process.env.NODE_ENV === 'development';
+    const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
     if (isDev) {
         console.log('=== WiFiShare Server ===');
         console.log('IP:', serverInfo.ip);
@@ -114,7 +114,7 @@ export async function startServer(): Promise<void> {
     // Start listening
     return new Promise((resolve, reject) => {
         server!.listen(serverInfo.port, '0.0.0.0', () => {
-            if (process.env.NODE_ENV === 'development') {
+            if (process.env.NODE_ENV === 'development' || !app.isPackaged) {
                 console.log('Server running at', serverInfo.url);
             }
             resolve();

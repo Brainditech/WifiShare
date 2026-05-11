@@ -82,6 +82,9 @@ export function WebClientAether() {
         setError(message.message as string);
         setCurrentTransfer(null);
         currentReaderAbortRef.current = null;
+        // Unblock any pending chunk waits so the upload loop can exit
+        pendingChunkResolvers.current.forEach(resolve => resolve());
+        pendingChunkResolvers.current.clear();
         break;
     }
   }, []);
@@ -117,10 +120,26 @@ export function WebClientAether() {
       ws.onclose = () => {
         if (pingInterval) clearInterval(pingInterval);
         if (!isMounted) return;
-        if (connectionStateRef.current === 'connected') {
-          setConnectionState('disconnected');
+
+        const prev = connectionStateRef.current;
+
+        // Auth was rejected — don't loop forever
+        if (prev === 'error') return;
+
+        // Initial bootstrap failed (server unreachable, wrong URL, etc.) —
+        // surface the error and let the user retry manually
+        if (prev === 'connecting') {
+          setConnectionState('error');
+          setError('Cannot reach server. Check that the desktop app is running on the same Wi-Fi.');
+          return;
         }
-        // Exponential backoff: 2s → 4s → 8s → ... max 30s
+
+        // We were truly connected, now lost — clean up transfer state and reconnect
+        setConnectionState('disconnected');
+        setCurrentTransfer(null);
+        currentReaderAbortRef.current = null;
+        pendingChunkResolvers.current.forEach(resolve => resolve());
+        pendingChunkResolvers.current.clear();
         const delay = reconnectDelayRef.current;
         reconnectDelayRef.current = Math.min(delay * 2, 30_000);
         reconnectTimeout = setTimeout(connect, delay);
@@ -152,20 +171,61 @@ export function WebClientAether() {
     document.body.removeChild(a);
   };
 
+  // Wait for the WebSocket to be OPEN. Mobile browsers tear down the socket
+  // while a native file picker is active, so by the time handleFileSelect
+  // fires the reconnect is usually mid-flight. Block until it lands.
+  const waitForConnection = (timeoutMs: number = 8000): Promise<WebSocket | null> => {
+    return new Promise((resolve) => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        resolve(wsRef.current);
+        return;
+      }
+      const start = Date.now();
+      const interval = setInterval(() => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          clearInterval(interval);
+          resolve(wsRef.current);
+        } else if (Date.now() - start > timeoutMs) {
+          clearInterval(interval);
+          resolve(null);
+        }
+      }, 100);
+    });
+  };
+
   const sendFile = async (file: File, queueInfo?: string): Promise<void> => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      setError('Not connected');
+    setCurrentTransfer({ fileName: file.name, percent: 0, direction: 'upload', queueInfo });
+
+    const ws = await waitForConnection(8000);
+    if (!ws) {
+      setError('Connection lost. Please try again.');
+      setCurrentTransfer(null);
       return;
     }
-    const ws = wsRef.current;
-    const fileId = crypto.randomUUID().replace(/-/g, '').substring(0, 12);
+    // crypto.randomUUID() is unavailable on some mobile browsers (notably
+    // Samsung Internet) over non-secure-context HTTP — use the universally
+    // supported crypto.getRandomValues with a Math.random fallback.
+    const fileId = (() => {
+      const arr = new Uint8Array(6);
+      if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+        crypto.getRandomValues(arr);
+      } else {
+        for (let i = 0; i < 6; i++) arr[i] = Math.floor(Math.random() * 256);
+      }
+      return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+    })();
     const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
 
-    ws.send(JSON.stringify({
-      type: 'file-start',
-      payload: { fileId, fileName: file.name, fileSize: file.size, totalChunks },
-    }));
-    setCurrentTransfer({ fileName: file.name, percent: 0, direction: 'upload', queueInfo });
+    try {
+      ws.send(JSON.stringify({
+        type: 'file-start',
+        payload: { fileId, fileName: file.name, fileSize: file.size, totalChunks },
+      }));
+    } catch {
+      setError('Failed to send file-start');
+      setCurrentTransfer(null);
+      return;
+    }
 
     let cancelled = false;
     let activeReader: FileReader | null = null;
@@ -202,9 +262,16 @@ export function WebClientAether() {
 
         if (cancelled || ws.readyState !== WebSocket.OPEN) break;
 
-        // Send chunk and wait for ACK (flow control)
-        await new Promise<void>((resolve) => {
-          pendingChunkResolvers.current.set(chunkIndex, resolve);
+        // Send chunk and wait for ACK (flow control) with 10s timeout
+        await new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            pendingChunkResolvers.current.delete(chunkIndex);
+            reject(new Error(`Chunk ${chunkIndex} ACK timeout`));
+          }, 10_000);
+          pendingChunkResolvers.current.set(chunkIndex, () => {
+            clearTimeout(timeout);
+            resolve();
+          });
           ws.send(JSON.stringify({
             type: 'file-chunk',
             payload: { fileId, chunkIndex, data: base64Data },
@@ -364,27 +431,44 @@ export function WebClientAether() {
           <p className="aether-body">Tap below to send files to your desktop</p>
         </div>
 
-        {/* Upload */}
+        {/* Upload — use a <label> wrapping the input so the picker opens
+            natively on every browser (programmatic .click() on hidden inputs
+            is blocked by iOS Safari and some Android Chrome versions) */}
         <div className="mb-8">
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            onChange={handleFileSelect}
-            className="hidden"
-            aria-label="Select files to send"
-          />
-          <button
-            type="button"
-            onClick={() => !currentTransfer && fileInputRef.current?.click()}
+          <label
+            htmlFor="wifishare-file-input"
             className="aether-btn aether-btn--primary aether-btn--large w-full py-6 text-lg"
-            disabled={!!currentTransfer}
             aria-disabled={!!currentTransfer}
-            style={{ cursor: currentTransfer ? 'not-allowed' : 'pointer', opacity: currentTransfer ? 0.6 : 1 }}
+            style={{
+              cursor: currentTransfer ? 'not-allowed' : 'pointer',
+              opacity: currentTransfer ? 0.6 : 1,
+              pointerEvents: currentTransfer ? 'none' : 'auto',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.5rem',
+            }}
           >
             <Upload className="w-6 h-6" />
             {currentTransfer ? 'Sending...' : 'Send File'}
-          </button>
+          </label>
+          <input
+            ref={fileInputRef}
+            id="wifishare-file-input"
+            type="file"
+            multiple
+            onChange={handleFileSelect}
+            disabled={!!currentTransfer}
+            style={{
+              position: 'absolute',
+              width: 1,
+              height: 1,
+              opacity: 0,
+              overflow: 'hidden',
+              pointerEvents: 'none',
+            }}
+            aria-label="Select files to send"
+          />
         </div>
 
         {/* Available Files */}
