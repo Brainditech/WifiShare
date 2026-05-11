@@ -6,7 +6,7 @@ const crypto_1 = require("crypto");
 /**
  * Generate a random session code for secure connections
  */
-function generateSessionCode(length = 6) {
+function generateSessionCode(length = 8) {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Exclude confusing characters (0, O, 1, I)
     let code = '';
     const bytes = (0, crypto_1.randomBytes)(length);
@@ -21,5 +21,6 @@ function generateSessionCode(length = 6) {
 function isValidSessionCode(code) {
     if (!code || typeof code !== 'string')
         return false;
-    return /^[A-Z0-9]{6}$/.test(code);
+    // Matches only the characters used by generateSessionCode
+    return /^[A-HJKLMNPQRSTUVWXYZ23456789]{8}$/.test(code);
 }

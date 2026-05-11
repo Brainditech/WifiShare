@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
+import * as fs from 'fs';
 import * as path from 'path';
 import { startServer, stopServer, getServerInfo } from './server';
 import { shareFile } from './server/websocket';
@@ -67,6 +68,9 @@ ipcMain.handle('get-downloads-path', () => {
 });
 
 ipcMain.handle('open-folder', async (_, folderPath: string) => {
+    if (!fs.existsSync(folderPath)) {
+        fs.mkdirSync(folderPath, { recursive: true });
+    }
     await shell.openPath(folderPath);
 });
 

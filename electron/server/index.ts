@@ -39,27 +39,34 @@ export async function startServer(): Promise<void> {
         }
     }
 
-    console.log('=== WiFiShare Server ===');
-    console.log('IP:', serverInfo.ip);
-    console.log('Port:', serverInfo.port);
-    console.log('Session Code:', serverInfo.sessionCode);
-    console.log('URL:', serverInfo.url);
-    console.log('Static Path:', staticPath);
-    console.log('Static exists:', fs.existsSync(staticPath));
+    const isDev = process.env.NODE_ENV === 'development';
+    if (isDev) {
+        console.log('=== WiFiShare Server ===');
+        console.log('IP:', serverInfo.ip);
+        console.log('Port:', serverInfo.port);
+        console.log('Session Code:', serverInfo.sessionCode);
+        console.log('URL:', serverInfo.url);
+        console.log('Static Path:', staticPath);
+        console.log('Static exists:', fs.existsSync(staticPath));
+    }
 
     // Middleware
     expressApp.use(express.json({ limit: '50mb' }));
 
     // API routes BEFORE static files
-    expressApp.get('/api/info', (req, res) => {
-        res.json({
-            sessionCode: serverInfo.sessionCode,
-            serverName: 'WiFiShare Desktop',
-        });
+    expressApp.get('/api/info', (_req, res) => {
+        res.json({ serverName: 'WiFiShare Desktop' });
     });
 
     expressApp.get('/api/download/:fileId', (req, res) => {
         const { fileId } = req.params;
+
+        // Validate fileId format to prevent path traversal
+        if (!/^[a-f0-9]{12}$/.test(fileId)) {
+            res.status(400).send('Invalid file ID');
+            return;
+        }
+
         const sharedFilesPath = path.join(app.getPath('userData'), 'shared-files.json');
 
         try {
@@ -68,7 +75,13 @@ export async function startServer(): Promise<void> {
                 const fileInfo = sharedFiles[fileId];
 
                 if (fileInfo && fs.existsSync(fileInfo.path)) {
-                    res.download(fileInfo.path, fileInfo.name);
+                    const resolvedPath = path.resolve(fileInfo.path);
+                    // Ensure path is absolute and contains no traversal sequences
+                    if (!path.isAbsolute(resolvedPath) || resolvedPath.includes('..')) {
+                        res.status(403).send('Forbidden');
+                        return;
+                    }
+                    res.download(resolvedPath, path.basename(fileInfo.name));
                     return;
                 }
             }
@@ -101,12 +114,16 @@ export async function startServer(): Promise<void> {
     // Start listening
     return new Promise((resolve, reject) => {
         server!.listen(serverInfo.port, '0.0.0.0', () => {
-            console.log('Server running at', serverInfo.url);
+            if (process.env.NODE_ENV === 'development') {
+                console.log('Server running at', serverInfo.url);
+            }
             resolve();
         });
 
+        let portRetries = 0;
         server!.on('error', (err: NodeJS.ErrnoException) => {
-            if (err.code === 'EADDRINUSE') {
+            if (err.code === 'EADDRINUSE' && portRetries < 10) {
+                portRetries++;
                 serverInfo.port++;
                 serverInfo.url = `http://${serverInfo.ip}:${serverInfo.port}/?code=${serverInfo.sessionCode}`;
                 server!.listen(serverInfo.port, '0.0.0.0');

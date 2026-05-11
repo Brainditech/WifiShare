@@ -9,19 +9,23 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     shareFiles: (filePaths) => electron_1.ipcRenderer.invoke('share-files', filePaths),
     // Event listeners for real-time updates
     onFileReceived: (callback) => {
-        electron_1.ipcRenderer.on('file-received', (_, file) => callback(file));
-        return () => electron_1.ipcRenderer.removeAllListeners('file-received');
+        const listener = (_, file) => callback(file);
+        electron_1.ipcRenderer.on('file-received', listener);
+        return () => electron_1.ipcRenderer.removeListener('file-received', listener);
     },
     onClientConnected: (callback) => {
-        electron_1.ipcRenderer.on('client-connected', (_, client) => callback(client));
-        return () => electron_1.ipcRenderer.removeAllListeners('client-connected');
+        const listener = (_, client) => callback(client);
+        electron_1.ipcRenderer.on('client-connected', listener);
+        return () => electron_1.ipcRenderer.removeListener('client-connected', listener);
     },
     onClientDisconnected: (callback) => {
-        electron_1.ipcRenderer.on('client-disconnected', (_, client) => callback(client));
-        return () => electron_1.ipcRenderer.removeAllListeners('client-disconnected');
+        const listener = (_, client) => callback(client);
+        electron_1.ipcRenderer.on('client-disconnected', listener);
+        return () => electron_1.ipcRenderer.removeListener('client-disconnected', listener);
     },
     onTransferProgress: (callback) => {
-        electron_1.ipcRenderer.on('transfer-progress', (_, progress) => callback(progress));
-        return () => electron_1.ipcRenderer.removeAllListeners('transfer-progress');
+        const listener = (_, progress) => callback(progress);
+        electron_1.ipcRenderer.on('transfer-progress', listener);
+        return () => electron_1.ipcRenderer.removeListener('transfer-progress', listener);
     },
 });

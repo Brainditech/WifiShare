@@ -16,23 +16,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // Event listeners for real-time updates
     onFileReceived: (callback: (file: { name: string; path: string }) => void) => {
-        ipcRenderer.on('file-received', (_, file) => callback(file));
-        return () => ipcRenderer.removeAllListeners('file-received');
+        const listener = (_: Electron.IpcRendererEvent, file: { name: string; path: string }) => callback(file);
+        ipcRenderer.on('file-received', listener);
+        return () => ipcRenderer.removeListener('file-received', listener);
     },
 
     onClientConnected: (callback: (client: { id: string }) => void) => {
-        ipcRenderer.on('client-connected', (_, client) => callback(client));
-        return () => ipcRenderer.removeAllListeners('client-connected');
+        const listener = (_: Electron.IpcRendererEvent, client: { id: string }) => callback(client);
+        ipcRenderer.on('client-connected', listener);
+        return () => ipcRenderer.removeListener('client-connected', listener);
     },
 
     onClientDisconnected: (callback: (client: { id: string }) => void) => {
-        ipcRenderer.on('client-disconnected', (_, client) => callback(client));
-        return () => ipcRenderer.removeAllListeners('client-disconnected');
+        const listener = (_: Electron.IpcRendererEvent, client: { id: string }) => callback(client);
+        ipcRenderer.on('client-disconnected', listener);
+        return () => ipcRenderer.removeListener('client-disconnected', listener);
     },
 
     onTransferProgress: (callback: (progress: { fileName: string; percent: number }) => void) => {
-        ipcRenderer.on('transfer-progress', (_, progress) => callback(progress));
-        return () => ipcRenderer.removeAllListeners('transfer-progress');
+        const listener = (_: Electron.IpcRendererEvent, progress: { fileName: string; percent: number }) => callback(progress);
+        ipcRenderer.on('transfer-progress', listener);
+        return () => ipcRenderer.removeListener('transfer-progress', listener);
     },
 });
 
