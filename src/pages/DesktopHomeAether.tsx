@@ -251,14 +251,39 @@ export function DesktopHomeAether() {
             </button>
           </div>
 
-          {/* Recent Transfers */}
-          {receivedFiles.length > 0 && (
+          {/* Recent Transfers — in-progress upload is rendered as the first
+              row of this same list. Avoids the visual overlap that happened
+              when a separate fixed-position progress overlay collided with
+              this card at the bottom of the viewport. */}
+          {(currentTransfer || receivedFiles.length > 0) && (
             <div className="aether-card animate-slide-up">
               <h3 className="aether-label mb-3">Recent Transfers</h3>
               <div className="space-y-2">
-                {receivedFiles.map((file, i) => (
+                {currentTransfer && (
+                  <div
+                    className="py-2 px-1"
+                    role="status"
+                    aria-live="polite"
+                    aria-label={`Receiving ${currentTransfer.fileName}: ${currentTransfer.percent}%`}
+                  >
+                    <div className="flex items-center gap-3 mb-2">
+                      <FolderOpen className="w-4 h-4 flex-shrink-0" style={{ color: '#7C3AED' }} />
+                      <span className="flex-1 text-sm truncate text-white">{currentTransfer.fileName}</span>
+                      <span className="text-xs font-mono flex-shrink-0" style={{ color: '#7C3AED' }}>
+                        {currentTransfer.percent}%
+                      </span>
+                    </div>
+                    <div className="aether-progress" role="progressbar" aria-valuenow={currentTransfer.percent} aria-valuemin={0} aria-valuemax={100}>
+                      <div className="aether-progress__bar" style={{ width: `${currentTransfer.percent}%` }} />
+                    </div>
+                  </div>
+                )}
+                {receivedFiles.map((file) => (
                   <button
-                    key={`${file.path}-${i}`}
+                    // Stable key — server uniquifies filename on conflict, so
+                    // `path` is unique per received file. Index-based keys
+                    // caused every row to re-animate when a new file landed.
+                    key={file.path}
                     onClick={() => openFileFolder(file.path)}
                     className="w-full flex items-center gap-3 text-left py-2 px-1 rounded-lg hover:bg-white/5 transition-colors"
                     aria-label={`Open folder for ${file.name}`}
@@ -276,27 +301,6 @@ export function DesktopHomeAether() {
           )}
         </div>
       </div>
-
-      {/* Transfer Progress */}
-      {currentTransfer && (
-        <div
-          className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[90%] max-w-sm animate-slide-up"
-          role="status"
-          aria-live="polite"
-          aria-label={`Transfer progress: ${currentTransfer.percent}%`}
-        >
-          <div className="aether-card" style={{ padding: '20px' }}>
-            <div className="flex items-center justify-between mb-3">
-              <span className="aether-label">Transferring</span>
-              <span className="text-sm font-mono" style={{ color: '#7C3AED' }}>{currentTransfer.percent}%</span>
-            </div>
-            <p className="text-sm font-medium text-white mb-3 truncate">{currentTransfer.fileName}</p>
-            <div className="aether-progress" role="progressbar" aria-valuenow={currentTransfer.percent} aria-valuemin={0} aria-valuemax={100}>
-              <div className="aether-progress__bar" style={{ width: `${currentTransfer.percent}%` }} />
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Error Toast */}
       {error && (
