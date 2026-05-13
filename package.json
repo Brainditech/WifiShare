@@ -3,6 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "description": "WiFiShare - Transfert de fichiers local via WiFi",
+  "type": "module",
   "author": "Brainditech",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -10,9 +11,9 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "electron:dev": "cross-env NODE_ENV=development concurrently \"vite\" \"wait-on http://localhost:5173 && node scripts/launch-electron.js .\"",
+    "electron:dev": "cross-env NODE_ENV=development concurrently \"vite\" \"wait-on http://localhost:5173 && node scripts/launch-electron.cjs .\"",
     "electron:build": "npm run build && cross-env ELECTRON_RUN_AS_NODE= electron-builder",
-    "electron:compile": "tsc -p tsconfig.electron.json"
+    "electron:compile": "tsc -p tsconfig.electron.json && echo {\"type\":\"commonjs\"} > dist-electron/package.json"
   },
   "overrides": {
     "path-to-regexp": "^0.1.13"

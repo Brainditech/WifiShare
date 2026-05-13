@@ -1,5 +1,6 @@
 import express from 'express';
-import { createServer as createHttpServer, Server } from 'http';
+import type { Request, Response } from 'express';
+import { createServer as createHttpServer, Server, request as httpRequest } from 'http';
 import { WebSocketServer } from 'ws';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -7,6 +8,8 @@ import { app, BrowserWindow } from 'electron';
 import { getLocalIP } from './utils/network';
 import { generateSessionCode } from './utils/session';
 import { setupWebSocket } from './websocket';
+
+const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024; // 2 GB hard cap per file
 
 let server: Server | null = null;
 let wss: WebSocketServer | null = null;
@@ -58,6 +61,108 @@ export async function startServer(): Promise<void> {
         res.json({ serverName: 'WiFiShare Desktop' });
     });
 
+    // POST /api/upload — robust HTTP upload from web client.
+    // Replaces the WS chunked transfer: the browser streams the file natively,
+    // which survives backgrounding, mobile file pickers, and slow networks.
+    // Auth: X-Session-Code header (same code as WS auth).
+    // Filename: X-Filename header (URL-encoded). Size cap: MAX_UPLOAD_BYTES.
+    expressApp.post('/api/upload', (req: Request, res: Response) => {
+        const providedCode = req.headers['x-session-code'];
+        if (typeof providedCode !== 'string' || providedCode !== serverInfo.sessionCode) {
+            res.status(401).json({ error: 'Unauthorized' });
+            return;
+        }
+
+        const rawHeader = req.headers['x-filename'];
+        let rawName: string;
+        try {
+            rawName = decodeURIComponent(typeof rawHeader === 'string' ? rawHeader : '');
+        } catch {
+            res.status(400).json({ error: 'Invalid X-Filename encoding' });
+            return;
+        }
+        const safeName = path.basename(rawName).replace(/[/\\:*?"<>|]/g, '_').trim();
+        if (!safeName || safeName.startsWith('.')) {
+            res.status(400).json({ error: 'Invalid file name' });
+            return;
+        }
+
+        const contentLength = parseInt(req.headers['content-length'] ?? '0', 10);
+        if (contentLength > MAX_UPLOAD_BYTES) {
+            res.status(413).json({ error: `File too large (max ${MAX_UPLOAD_BYTES} bytes)` });
+            return;
+        }
+
+        const wifiShareFolder = path.join(app.getPath('downloads'), 'WiFiShare');
+        if (!fs.existsSync(wifiShareFolder)) fs.mkdirSync(wifiShareFolder, { recursive: true });
+
+        // Resolve a unique target path (avoid clobbering)
+        let savedName = safeName;
+        let filePath = path.join(wifiShareFolder, savedName);
+        let counter = 1;
+        while (fs.existsSync(filePath)) {
+            const ext = path.extname(safeName);
+            const base = path.basename(safeName, ext);
+            savedName = `${base} (${counter})${ext}`;
+            filePath = path.join(wifiShareFolder, savedName);
+            counter++;
+        }
+
+        const writeStream = fs.createWriteStream(filePath);
+        let receivedBytes = 0;
+        let progressThrottle = 0;
+        let aborted = false;
+
+        const cleanupFailedFile = () => {
+            try { writeStream.destroy(); } catch { /* ignore */ }
+            fs.promises.unlink(filePath).catch(() => { /* ignore */ });
+        };
+
+        req.on('data', (chunk: Buffer) => {
+            if (aborted) return;
+            receivedBytes += chunk.length;
+
+            // Enforce size cap even if Content-Length lied
+            if (receivedBytes > MAX_UPLOAD_BYTES) {
+                aborted = true;
+                cleanupFailedFile();
+                if (!res.headersSent) res.status(413).json({ error: 'File too large' });
+                req.destroy();
+                return;
+            }
+
+            // Notify desktop UI at most ~10x/sec
+            const now = Date.now();
+            if (contentLength > 0 && now - progressThrottle > 100) {
+                progressThrottle = now;
+                const percent = Math.min(100, Math.round((receivedBytes / contentLength) * 100));
+                notifyMainWindow('transfer-progress', { fileName: savedName, percent });
+            }
+        });
+
+        req.on('aborted', () => {
+            aborted = true;
+            cleanupFailedFile();
+            if (!res.headersSent) res.status(499).json({ error: 'Client aborted' });
+        });
+
+        writeStream.on('error', (err) => {
+            aborted = true;
+            console.error('[upload] write error:', err);
+            cleanupFailedFile();
+            if (!res.headersSent) res.status(500).json({ error: 'Write failed' });
+        });
+
+        writeStream.on('finish', () => {
+            if (aborted) return;
+            notifyMainWindow('transfer-progress', { fileName: savedName, percent: 100 });
+            notifyMainWindow('file-received', { name: savedName, path: filePath });
+            res.status(200).json({ savedAs: savedName, size: receivedBytes });
+        });
+
+        req.pipe(writeStream);
+    });
+
     expressApp.get('/api/download/:fileId', (req, res) => {
         const { fileId } = req.params;
 
@@ -91,7 +196,37 @@ export async function startServer(): Promise<void> {
         }
     });
 
-    // Serve static files
+    // Dev mode: proxy non-API requests to Vite dev server (port 5173)
+    // so mobile clients always get the latest code with hot reload.
+    // Production: serve pre-built static files from dist.
+    if (isDev) {
+        expressApp.use((req, res, next) => {
+            if (req.url?.startsWith('/api/')) return next();
+
+            const proxyReq = httpRequest({
+                hostname: 'localhost',
+                port: 5173,
+                path: req.url,
+                method: req.method,
+                headers: { ...req.headers, host: 'localhost:5173' },
+            }, (proxyRes) => {
+                // Copy headers, preserving content-type for JS/CSS/HTML
+                const headers = { ...proxyRes.headers };
+                res.writeHead(proxyRes.statusCode || 200, headers);
+                proxyRes.pipe(res);
+            });
+
+            proxyReq.on('error', (err) => {
+                console.error('[proxy] Vite proxy error:', err.message);
+                // Fallback: try static dist if Vite is not running
+                next();
+            });
+
+            req.pipe(proxyReq);
+        });
+    }
+
+    // Serve static files (production, or dev fallback if Vite is down)
     expressApp.use(express.static(staticPath));
 
     // SPA fallback - serve index.html for all other routes
