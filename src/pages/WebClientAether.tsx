@@ -1,5 +1,13 @@
 // ============================================================================
 // WebClient - Aether Design
+//
+// Architecture (v2 — robust):
+//   - WebSocket: authentication + available-files list + download notifications.
+//                Used only as a signaling channel. If it drops, uploads still work.
+//   - HTTP POST /api/upload: file uploads. The browser streams the file natively,
+//                which survives backgrounding, mobile file pickers (including
+//                folder navigation), and slow networks. No chunks, no ACKs, no
+//                zombie-WS detection — the browser handles transport reliability.
 // ============================================================================
 
 import { useEffect, useState, useCallback, useRef } from 'react';
@@ -19,10 +27,8 @@ interface TransferProgress {
   fileName: string;
   percent: number;
   direction: 'upload' | 'download';
-  queueInfo?: string; // e.g. "2/3"
+  queueInfo?: string;
 }
-
-const CHUNK_SIZE = 64 * 1024;
 
 const getFileIcon = (name: string) => {
   const ext = name.split('.').pop()?.toLowerCase();
@@ -45,17 +51,17 @@ export function WebClientAether() {
   const wsRef = useRef<WebSocket | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const connectionStateRef = useRef<ConnectionState>('connecting');
-  const reconnectDelayRef = useRef<number>(2000);
-  // Stores abort function for the active FileReader so transfer can be cancelled
-  const currentReaderAbortRef = useRef<(() => void) | null>(null);
-  // Stores pending chunk resolver for ACK-driven flow
-  const pendingChunkResolvers = useRef<Map<number, () => void>>(new Map());
+  const reconnectDelayRef = useRef<number>(1000);
+  const hasEverConnectedRef = useRef<boolean>(false);
+  // Active XHR for the in-flight upload — used to cancel from UI.
+  const currentXhrRef = useRef<XMLHttpRequest | null>(null);
 
   useEffect(() => { connectionStateRef.current = connectionState; }, [connectionState]);
 
   const handleMessage = useCallback((message: { type: string; [key: string]: unknown }) => {
     switch (message.type) {
       case 'auth-success':
+        hasEverConnectedRef.current = true;
         setConnectionState('connected');
         break;
       case 'auth-failed':
@@ -65,30 +71,18 @@ export function WebClientAether() {
       case 'available-files':
         setAvailableFiles(message.files as AvailableFile[]);
         break;
-      case 'file-complete':
-        setCurrentTransfer(null);
-        currentReaderAbortRef.current = null;
-        break;
-      case 'file-chunk-ack': {
-        const idx = message.chunkIndex as number;
-        const resolve = pendingChunkResolvers.current.get(idx);
-        if (resolve) { resolve(); pendingChunkResolvers.current.delete(idx); }
-        break;
-      }
       case 'file-ready':
         downloadFile(message.downloadUrl as string, message.fileName as string);
         break;
       case 'error':
         setError(message.message as string);
-        setCurrentTransfer(null);
-        currentReaderAbortRef.current = null;
-        // Unblock any pending chunk waits so the upload loop can exit
-        pendingChunkResolvers.current.forEach(resolve => resolve());
-        pendingChunkResolvers.current.clear();
         break;
     }
   }, []);
 
+  // ── WebSocket lifecycle ──────────────────────────────────────────────────
+  // The WS is for signaling only (auth + available files + download links).
+  // We reconnect with a simple backoff; uploads don't depend on it.
   useEffect(() => {
     if (!sessionCode) { setError('Missing session code'); setConnectionState('error'); return; }
 
@@ -98,67 +92,91 @@ export function WebClientAether() {
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 
     const connect = () => {
+      if (reconnectTimeout) { clearTimeout(reconnectTimeout); reconnectTimeout = null; }
+
+      if (ws) {
+        ws.onclose = null;
+        ws.onerror = null;
+        ws.onmessage = null;
+        ws.onopen = null;
+        try { ws.close(); } catch { /* ignore */ }
+      }
+
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}`;
-      ws = new WebSocket(wsUrl);
+      ws = new WebSocket(`${protocol}//${window.location.host}`);
       wsRef.current = ws;
 
       ws.onopen = () => {
         if (!isMounted) return;
-        reconnectDelayRef.current = 2000; // reset backoff on success
+        reconnectDelayRef.current = 1000;
         ws?.send(JSON.stringify({ type: 'auth', sessionCode }));
+        if (pingInterval) clearInterval(pingInterval);
         pingInterval = setInterval(() => {
           if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }));
-        }, 30000);
+        }, 15_000);
       };
 
       ws.onmessage = (event) => {
         if (!isMounted) return;
-        try { handleMessage(JSON.parse(event.data)); } catch { /* malformed frame, ignore */ }
+        try { handleMessage(JSON.parse(event.data)); } catch { /* malformed, ignore */ }
       };
 
       ws.onclose = () => {
-        if (pingInterval) clearInterval(pingInterval);
+        if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
         if (!isMounted) return;
 
         const prev = connectionStateRef.current;
-
-        // Auth was rejected — don't loop forever
         if (prev === 'error') return;
 
-        // Initial bootstrap failed (server unreachable, wrong URL, etc.) —
-        // surface the error and let the user retry manually
-        if (prev === 'connecting') {
+        // Never authenticated → bootstrap failure
+        if (!hasEverConnectedRef.current && prev === 'connecting') {
           setConnectionState('error');
           setError('Cannot reach server. Check that the desktop app is running on the same Wi-Fi.');
           return;
         }
 
-        // We were truly connected, now lost — clean up transfer state and reconnect
         setConnectionState('disconnected');
-        setCurrentTransfer(null);
-        currentReaderAbortRef.current = null;
-        pendingChunkResolvers.current.forEach(resolve => resolve());
-        pendingChunkResolvers.current.clear();
-        const delay = reconnectDelayRef.current;
-        reconnectDelayRef.current = Math.min(delay * 2, 30_000);
-        reconnectTimeout = setTimeout(connect, delay);
+
+        // Only auto-reconnect while the page is foreground — when backgrounded
+        // (file picker open), the browser kills new sockets instantly. The
+        // visibility/focus handlers below trigger reconnection on return.
+        if (document.visibilityState === 'visible') {
+          const delay = reconnectDelayRef.current;
+          reconnectDelayRef.current = Math.min(delay * 1.5, 15_000);
+          reconnectTimeout = setTimeout(connect, delay);
+        }
       };
 
-      ws.onerror = () => {
-        // onclose fires right after onerror; no extra action needed
-      };
+      ws.onerror = () => { /* onclose will fire next */ };
     };
+
+    const tryReconnectIfNeeded = () => {
+      const state = connectionStateRef.current;
+      if (state !== 'disconnected' && state !== 'connecting') return;
+      const currentWs = wsRef.current;
+      if (currentWs?.readyState === WebSocket.OPEN || currentWs?.readyState === WebSocket.CONNECTING) return;
+      if (reconnectTimeout) { clearTimeout(reconnectTimeout); reconnectTimeout = null; }
+      reconnectDelayRef.current = 1000;
+      connect();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') tryReconnectIfNeeded();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', tryReconnectIfNeeded);
+    window.addEventListener('pageshow', tryReconnectIfNeeded);
 
     connect();
     return () => {
       isMounted = false;
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', tryReconnectIfNeeded);
+      window.removeEventListener('pageshow', tryReconnectIfNeeded);
       if (pingInterval) clearInterval(pingInterval);
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (ws) { ws.onclose = null; ws.onerror = null; ws.onmessage = null; ws.close(); }
-      // Abort any in-progress FileReader
-      if (currentReaderAbortRef.current) { currentReaderAbortRef.current(); currentReaderAbortRef.current = null; }
-      pendingChunkResolvers.current.clear();
+      if (currentXhrRef.current) { try { currentXhrRef.current.abort(); } catch { /* ignore */ } }
     };
   }, [sessionCode, handleMessage]);
 
@@ -171,160 +189,82 @@ export function WebClientAether() {
     document.body.removeChild(a);
   };
 
-  // Wait for the WebSocket to be OPEN. Mobile browsers tear down the socket
-  // while a native file picker is active, so by the time handleFileSelect
-  // fires the reconnect is usually mid-flight. Block until it lands.
-  const waitForConnection = (timeoutMs: number = 8000): Promise<WebSocket | null> => {
-    return new Promise((resolve) => {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        resolve(wsRef.current);
-        return;
-      }
-      const start = Date.now();
-      const interval = setInterval(() => {
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          clearInterval(interval);
-          resolve(wsRef.current);
-        } else if (Date.now() - start > timeoutMs) {
-          clearInterval(interval);
-          resolve(null);
+  // ── Upload (HTTP POST) ───────────────────────────────────────────────────
+  // We use XMLHttpRequest (not fetch) because it gives us upload.onprogress
+  // and a reliable .abort() for cancellation. The browser owns the connection
+  // for the upload — it survives page backgrounding, picker overlays, and
+  // momentary network blips. No retries are needed here.
+  const uploadFile = (file: File, queueInfo?: string): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      currentXhrRef.current = xhr;
+
+      xhr.open('POST', '/api/upload', true);
+      xhr.setRequestHeader('X-Session-Code', sessionCode);
+      xhr.setRequestHeader('X-Filename', encodeURIComponent(file.name));
+      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+
+      xhr.upload.onprogress = (e) => {
+        if (!e.lengthComputable) return;
+        const percent = Math.min(100, Math.round((e.loaded / e.total) * 100));
+        setCurrentTransfer({ fileName: file.name, percent, direction: 'upload', queueInfo });
+      };
+
+      xhr.onload = () => {
+        currentXhrRef.current = null;
+        if (xhr.status >= 200 && xhr.status < 300) {
+          setCurrentTransfer({ fileName: file.name, percent: 100, direction: 'upload', queueInfo });
+          resolve();
+        } else if (xhr.status === 401) {
+          reject(new Error('Session expired. Reload the page to get a new code.'));
+        } else if (xhr.status === 413) {
+          reject(new Error('File too large.'));
+        } else {
+          reject(new Error(`Upload failed (HTTP ${xhr.status})`));
         }
-      }, 100);
+      };
+
+      xhr.onerror = () => {
+        currentXhrRef.current = null;
+        reject(new Error('Network error during upload'));
+      };
+      xhr.onabort = () => {
+        currentXhrRef.current = null;
+        reject(new Error('Upload cancelled'));
+      };
+
+      setCurrentTransfer({ fileName: file.name, percent: 0, direction: 'upload', queueInfo });
+      xhr.send(file);
     });
   };
 
-  const sendFile = async (file: File, queueInfo?: string): Promise<void> => {
-    setCurrentTransfer({ fileName: file.name, percent: 0, direction: 'upload', queueInfo });
-
-    const ws = await waitForConnection(8000);
-    if (!ws) {
-      setError('Connection lost. Please try again.');
-      setCurrentTransfer(null);
-      return;
-    }
-    // crypto.randomUUID() is unavailable on some mobile browsers (notably
-    // Samsung Internet) over non-secure-context HTTP — use the universally
-    // supported crypto.getRandomValues with a Math.random fallback.
-    const fileId = (() => {
-      const arr = new Uint8Array(6);
-      if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-        crypto.getRandomValues(arr);
-      } else {
-        for (let i = 0; i < 6; i++) arr[i] = Math.floor(Math.random() * 256);
-      }
-      return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
-    })();
-    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-
-    try {
-      ws.send(JSON.stringify({
-        type: 'file-start',
-        payload: { fileId, fileName: file.name, fileSize: file.size, totalChunks },
-      }));
-    } catch {
-      setError('Failed to send file-start');
-      setCurrentTransfer(null);
-      return;
-    }
-
-    let cancelled = false;
-    let activeReader: FileReader | null = null;
-
-    currentReaderAbortRef.current = () => {
-      cancelled = true;
-      activeReader?.abort();
-      // Notify server
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'file-cancel', payload: { fileId } }));
-      }
-    };
-
-    try {
-      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-        if (cancelled || ws.readyState !== WebSocket.OPEN) break;
-
-        const start = chunkIndex * CHUNK_SIZE;
-        const end = Math.min(start + CHUNK_SIZE, file.size);
-        const slice = file.slice(start, end);
-
-        // Read chunk as base64 via FileReader
-        const base64Data = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          activeReader = reader;
-          reader.onload = () => {
-            const dataUrl = reader.result as string;
-            resolve(dataUrl.split(',')[1]);
-          };
-          reader.onerror = () => reject(new Error('Failed to read chunk'));
-          reader.onabort = () => reject(new Error('Transfer cancelled'));
-          reader.readAsDataURL(slice);
-        });
-
-        if (cancelled || ws.readyState !== WebSocket.OPEN) break;
-
-        // Send chunk and wait for ACK (flow control) with 10s timeout
-        await new Promise<void>((resolve, reject) => {
-          const timeout = setTimeout(() => {
-            pendingChunkResolvers.current.delete(chunkIndex);
-            reject(new Error(`Chunk ${chunkIndex} ACK timeout`));
-          }, 10_000);
-          pendingChunkResolvers.current.set(chunkIndex, () => {
-            clearTimeout(timeout);
-            resolve();
-          });
-          ws.send(JSON.stringify({
-            type: 'file-chunk',
-            payload: { fileId, chunkIndex, data: base64Data },
-          }));
-        });
-
-        setCurrentTransfer({
-          fileName: file.name,
-          percent: Math.round(((chunkIndex + 1) / totalChunks) * 100),
-          direction: 'upload',
-          queueInfo,
-        });
-      }
-
-      if (!cancelled && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'file-end', payload: { fileId } }));
-      }
-    } catch (err) {
-      if (!cancelled) {
-        const message = err instanceof Error ? err.message : 'Transfer failed';
-        setError(message);
-        setCurrentTransfer(null);
-        currentReaderAbortRef.current = null;
-      }
-    } finally {
-      activeReader = null;
-    }
-  };
-
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    // Clone immediately — the input gets reset before async work runs
     const files = Array.from(event.target.files ?? []);
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (files.length === 0) return;
 
+    setError(null);
     try {
       for (let i = 0; i < files.length; i++) {
         const queueInfo = files.length > 1 ? `${i + 1}/${files.length}` : undefined;
-        await sendFile(files[i], queueInfo);
-        // Stop if connection dropped mid-queue
-        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) break;
+        await uploadFile(files[i], queueInfo);
       }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Upload failed';
+      // Don't surface cancellation as an error
+      if (msg !== 'Upload cancelled') setError(msg);
     } finally {
       setCurrentTransfer(null);
-      currentReaderAbortRef.current = null;
+      currentXhrRef.current = null;
     }
   };
 
   const cancelTransfer = () => {
-    if (currentReaderAbortRef.current) {
-      currentReaderAbortRef.current();
-      currentReaderAbortRef.current = null;
+    if (currentXhrRef.current) {
+      try { currentXhrRef.current.abort(); } catch { /* ignore */ }
+      currentXhrRef.current = null;
     }
-    pendingChunkResolvers.current.clear();
     setCurrentTransfer(null);
   };
 
@@ -333,7 +273,7 @@ export function WebClientAether() {
     wsRef.current.send(JSON.stringify({ type: 'file-request', payload: { fileId } }));
   };
 
-  // Error State
+  // ── Render ───────────────────────────────────────────────────────────────
   if (connectionState === 'error') {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center p-6">
@@ -354,7 +294,6 @@ export function WebClientAether() {
     );
   }
 
-  // Connecting State
   if (connectionState === 'connecting') {
     return (
       <div className="min-h-screen bg-black flex flex-col items-center justify-center">
@@ -376,49 +315,34 @@ export function WebClientAether() {
     );
   }
 
-  // Disconnected State
-  if (connectionState === 'disconnected') {
-    return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center">
-        <div className="aether-bg">
-          <div className="aether-orb aether-orb--primary" style={{ opacity: 0.08 }} />
-        </div>
-        <div className="flex flex-col items-center animate-scale-in text-center p-6">
-          <div className="aether-icon-box aether-icon-box--large mx-auto mb-6" style={{ borderColor: 'rgba(239,68,68,0.4)' }}>
-            <Wifi className="w-7 h-7 text-red-400" />
-          </div>
-          <h1 className="aether-title aether-title--small mb-2">Connection Lost</h1>
-          <p className="aether-body mb-2">Reconnecting automatically...</p>
-          <div className="relative w-8 h-8 mt-4">
-            <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-[#7C3AED] animate-spin" />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Connected State
+  const isReconnecting = connectionState === 'disconnected';
   return (
     <div className="min-h-screen bg-black text-white relative overflow-hidden">
       <div className="aether-bg">
-        <div className="aether-orb aether-orb--primary" style={{ background: '#22C55E', opacity: 0.1, top: '-10%', right: '-10%' }} />
+        <div className="aether-orb aether-orb--primary" style={{ background: isReconnecting ? '#F59E0B' : '#22C55E', opacity: 0.1, top: '-10%', right: '-10%' }} />
         <div className="aether-orb aether-orb--secondary" style={{ opacity: 0.08 }} />
       </div>
 
-      {/* Header */}
-      <header className="relative z-10 px-6 py-8 flex items-center justify-between">
+      {isReconnecting && (
+        <div className="fixed inset-x-0 top-0 z-50 flex items-center justify-center gap-2 py-2" style={{ background: 'rgba(245, 158, 11, 0.15)', backdropFilter: 'blur(8px)', borderBottom: '1px solid rgba(245, 158, 11, 0.3)' }}>
+          <div className="w-3 h-3 rounded-full border-2 border-transparent border-t-amber-400 animate-spin" />
+          <span className="text-xs font-medium text-amber-400">Signaling reconnecting…</span>
+        </div>
+      )}
+
+      <header className="relative z-10 px-6 py-8 flex items-center justify-between" style={{ marginTop: isReconnecting ? '28px' : 0 }}>
         <div className="aether-icon-box" style={{ width: '40px', height: '40px' }}>
           <Wifi className="w-4 h-4" />
         </div>
-        <div className="aether-status" role="status" aria-label="Connection status: Connected">
-          <span className="aether-status__dot aether-status__dot--online" />
-          <span style={{ color: 'rgba(255,255,255,0.48)' }} className="text-xs font-medium tracking-wide uppercase">Connected</span>
+        <div className="aether-status" role="status" aria-label={`Connection status: ${isReconnecting ? 'Reconnecting' : 'Connected'}`}>
+          <span className="aether-status__dot" style={{ background: isReconnecting ? '#F59E0B' : undefined }} />
+          <span style={{ color: 'rgba(255,255,255,0.48)' }} className="text-xs font-medium tracking-wide uppercase">
+            {isReconnecting ? 'Reconnecting...' : 'Connected'}
+          </span>
         </div>
       </header>
 
-      {/* Main */}
       <main className="relative z-10 px-6 pb-8">
-        {/* Hero */}
         <div className="text-center py-8 mb-8">
           <div className="relative w-32 h-32 mx-auto mb-6">
             <div className="absolute inset-0 rounded-full border border-[#7C3AED]/20 animate-ping" style={{ animationDuration: '3s' }} />
@@ -431,9 +355,6 @@ export function WebClientAether() {
           <p className="aether-body">Tap below to send files to your desktop</p>
         </div>
 
-        {/* Upload — use a <label> wrapping the input so the picker opens
-            natively on every browser (programmatic .click() on hidden inputs
-            is blocked by iOS Safari and some Android Chrome versions) */}
         <div className="mb-8">
           <label
             htmlFor="wifishare-file-input"
@@ -471,7 +392,6 @@ export function WebClientAether() {
           />
         </div>
 
-        {/* Available Files */}
         {availableFiles.length > 0 && (
           <div className="animate-slide-up">
             <h3 className="aether-label mb-4 text-center">Available Downloads</h3>
@@ -499,7 +419,6 @@ export function WebClientAether() {
         )}
       </main>
 
-      {/* Transfer Progress Overlay */}
       {currentTransfer && (
         <div
           className="fixed inset-x-4 bottom-6 z-50 animate-slide-up"
@@ -531,7 +450,6 @@ export function WebClientAether() {
         </div>
       )}
 
-      {/* Error toast */}
       {error && connectionState === 'connected' && (
         <div className="fixed inset-x-4 top-4 z-50 animate-slide-up">
           <div className="aether-card flex items-center gap-3" style={{ padding: '14px 18px', borderColor: 'rgba(239,68,68,0.4)' }}>
