@@ -19,7 +19,7 @@
     "path-to-regexp": "^0.1.13"
   },
   "dependencies": {
-    "express": "^4.21.0",
+    "express": "^4.22.2",
     "html5-qrcode": "^2.3.8",
     "lucide-react": "^0.469.0",
     "peerjs": "^1.5.5",
@@ -27,7 +27,7 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^6.30.3",
-    "ws": "^8.20.0",
+    "ws": "^8.20.1",
     "zustand": "^5.0.10"
   },
   "devDependencies": {
